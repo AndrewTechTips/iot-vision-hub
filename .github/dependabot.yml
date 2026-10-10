@@ -15,6 +15,15 @@ updates:
     groups:
       dashboard-dependencies:
         patterns: ["*"]
+    ignore:
+      # openapi-typescript needs TypeScript's JS compiler API, which the native TypeScript 7
+      # lacks (AD-19): stay on 5.x until it supports 7.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # Node's types follow the Node version in .nvmrc, the CI and the Dockerfile: move them
+      # together, by hand.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
@@ -25,3 +34,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # The dashboard's build stage uses the Node version in frontend/.nvmrc (CI does too).
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
