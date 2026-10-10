@@ -65,6 +65,7 @@ class PersonDetector(Protocol):
 class PersonVerdict:
     confidence: float | None  # best score; None when no check worked
     person: bool | None  # None when no check worked
+    at: datetime | None = None  # when the frame that showed the person was captured
 
 
 class ModelError(RuntimeError):
@@ -136,6 +137,7 @@ class EventCheck:
         self._checker = checker
         self._lock = threading.Lock()
         self._best: float | None = None
+        self._found_at: datetime | None = None
         self._failed = False
         self._checks = 0
         self._due = started_at
@@ -155,16 +157,21 @@ class EventCheck:
         self._checks += 1
         self._due = at + self._checker.interval
         image = frame.copy()  # the camera thread moves on to the next frame
-        self._pending = self._checker.submit(lambda: self._check(image))
+        self._pending = self._checker.submit(lambda: self._check(image, at))
 
-    def finish(self, best_frame: Frame, done: Callable[[PersonVerdict], None]) -> None:
+    def finish(
+        self,
+        best_frame: Frame,
+        done: Callable[[PersonVerdict], None],
+        best_frame_at: datetime | None = None,
+    ) -> None:
         """Gives the frame with the most motion a last look (unless a person was already
         found), then calls ``done`` with the verdict, on the checker's thread."""
         image = best_frame.copy()
 
         def final() -> None:
             if not self.found and not self._failed:
-                self._check(image)
+                self._check(image, best_frame_at)
             done(self.verdict())
 
         self._checker.submit(final)  # after any check still running: one thread, in order
@@ -173,11 +180,12 @@ class EventCheck:
         with self._lock:
             if self._failed or self._best is None:
                 return PersonVerdict(confidence=None, person=None)
+            person = self._best >= self._checker.threshold
             return PersonVerdict(
-                confidence=self._best, person=self._best >= self._checker.threshold
+                confidence=self._best, person=person, at=self._found_at if person else None
             )
 
-    def _check(self, image: Frame) -> None:
+    def _check(self, image: Frame, at: datetime | None) -> None:
         if self._failed:
             return
         try:
@@ -189,6 +197,8 @@ class EventCheck:
             return
         score = people[0].confidence if people else 0.0
         with self._lock:
+            if score >= self._checker.threshold and self._found_at is None:
+                self._found_at = at
             self._best = max(self._best or 0.0, score)
 
 

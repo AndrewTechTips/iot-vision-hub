@@ -300,6 +300,13 @@ class TestClips:
             # The pre-roll, the motion, then the quiet period that closed the event.
             expected = 1 + lasted + DETECTION.motion_end_grace_seconds
             assert event.clip.duration_seconds == pytest.approx(expected, abs=0.3)
+            # Its first frame is the pre-roll's: a player can place the detection on it.
+            assert event.clip.started_at is not None
+            lead = (motion.started_at - event.clip.started_at).total_seconds()
+            assert lead == pytest.approx(1, abs=0.15)
+            # The snapshot's frame lies within the event.
+            assert event.snapshot_at is not None
+            assert motion.started_at <= event.snapshot_at <= motion.ended_at
 
     def test_without_clip_settings_events_have_none(self) -> None:
         sink = RecordingSink(stop_after_ended=1)
@@ -404,6 +411,10 @@ class TestPersons:
         assert ended.event.person_confidence == 0.9
         assert ended.event.alert is True
         assert detector.calls == 2  # found on the second check: no more after that
+        # Found on the second check, one interval (1 s) after the event started.
+        assert ended.event.person_at is not None
+        found_after = (ended.event.person_at - ended.event.started_at).total_seconds()
+        assert found_after == pytest.approx(1, abs=0.15)
 
     def test_motion_without_a_person_stays_quiet_on_a_people_only_camera(self) -> None:
         detector = ScriptedDetector(0.3)

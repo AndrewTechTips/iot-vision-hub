@@ -89,6 +89,11 @@ class MotionEventRow(Base):
     # Whether a person was seen, and the best score; NULL when nobody checked.
     person: Mapped[bool | None]
     person_confidence: Mapped[float | None] = mapped_column(Float)
+    # Moments in the event, for the clip's timeline: the person found, the snapshot's frame, the
+    # clip's first frame. NULL for events recorded before they were kept.
+    person_at: Mapped[datetime | None]
+    snapshot_at: Mapped[datetime | None]
+    clip_started_at: Mapped[datetime | None]
     # False when the camera alerts on people only and none was seen.
     alert: Mapped[bool] = mapped_column(default=True, server_default=true())
     created_at: Mapped[datetime] = mapped_column(default=utc_now)

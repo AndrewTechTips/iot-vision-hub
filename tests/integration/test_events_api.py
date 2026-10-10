@@ -1,6 +1,7 @@
 """End to end: a live synthetic camera produces events that are stored and served."""
 
 import asyncio
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -170,6 +171,11 @@ async def test_events_come_with_a_playable_clip(
     [event, *_] = await wait_for_events(client, bearer)
     clip = event["clip"]
     assert clip["content_type"] == "video/webm"
+    # The moments a player marks: the clip starts before the motion, the snapshot within it.
+    moments = (clip["started_at"], event["started_at"], event["ended_at"], event["snapshot_at"])
+    clip_start, started, ended, snapshot = (datetime.fromisoformat(value) for value in moments)
+    assert clip_start < started <= snapshot <= ended
+    assert event["person_at"] is None  # no person model in these tests
 
     response = await client.get(clip["url"])  # signed: what a <video> tag sends
 
@@ -257,3 +263,45 @@ async def test_with_clips_turned_off_events_have_none(
 
     assert event["clip"] is None
     assert missing.status_code == 404
+
+
+async def test_activity_counts_events_per_hour(
+    client: httpx2.AsyncClient, bearer: dict[str, str]
+) -> None:
+    await wait_for_events(client, bearer)
+
+    response = await client.get(f"{EVENTS}/activity", headers=bearer)
+    porch = await client.get(f"{EVENTS}/activity", params={"device_id": "porch"}, headers=bearer)
+    other = await client.get(f"{EVENTS}/activity", params={"device_id": "gate"}, headers=bearer)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["buckets"]
+    assert {bucket["device_id"] for bucket in body["buckets"]} == {"porch"}
+    assert all(bucket["start"].endswith(":00:00Z") for bucket in body["buckets"])
+    assert sum(bucket["events"] for bucket in body["buckets"]) >= 1
+    # The default window is the last 28 days.
+    since, until = (datetime.fromisoformat(body[key]) for key in ("since", "until"))
+    assert until - since == timedelta(days=28)
+    assert porch.json()["buckets"] == body["buckets"]
+    assert other.json()["buckets"] == []
+
+
+@pytest.mark.parametrize(
+    ("params", "detail"),
+    [
+        ({"since": "2026-10-02T00:00:00Z", "until": "2026-10-01T00:00:00Z"}, "before"),
+        ({"since": "2026-01-01T00:00:00Z", "until": "2026-10-01T00:00:00Z"}, "92 days"),
+    ],
+)
+async def test_activity_windows_are_checked(
+    client: httpx2.AsyncClient, bearer: dict[str, str], params: dict[str, str], detail: str
+) -> None:
+    response = await client.get(f"{EVENTS}/activity", params=params, headers=bearer)
+
+    assert response.status_code == 400
+    assert detail in response.json()["detail"]
+
+
+async def test_activity_needs_a_login(client: httpx2.AsyncClient) -> None:
+    assert (await client.get(f"{EVENTS}/activity")).status_code == 401

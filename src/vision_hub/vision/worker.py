@@ -222,6 +222,7 @@ class CameraWorker:
             event,
             person=verdict.person,
             person_confidence=verdict.confidence,
+            person_at=verdict.at,
             alert=should_alert(self._alert_on, verdict.confidence, threshold),
         )
 
@@ -285,7 +286,7 @@ class CameraWorker:
         if check is None:
             publish(PersonVerdict(confidence=None, person=None))
         else:
-            check.finish(ended.best_frame, publish)
+            check.finish(ended.best_frame, publish, ended.best_frame_at)
 
     def _publish_status(self, status: DeviceStatus) -> None:
         logger.info("camera_status", status=status)

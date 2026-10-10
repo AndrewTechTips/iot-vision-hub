@@ -13,7 +13,7 @@ from vision_hub.domain.events import (
     MotionStartedEvent,
     VideoClip,
 )
-from vision_hub.domain.history import EventRecord
+from vision_hub.domain.history import ActivityBucket, EventRecord
 from vision_hub.domain.motion import BoundingBox, MotionEvent
 from vision_hub.domain.storage import SnapshotKind, StoredSnapshot
 from vision_hub.infra.storage.local import LocalSnapshotStore
@@ -28,17 +28,25 @@ class FakeRepository:
         self.log = log
         self.broken = broken
         self.completed: list[tuple[MotionEvent, Sequence[StoredSnapshot]]] = []
+        self.moments: list[tuple[datetime | None, datetime | None]] = []
 
     async def add_started(self, event: MotionEvent) -> None:
         self._maybe_fail()
         self.log.append(f"stored start {event.id}")
 
     async def complete(
-        self, event: MotionEvent, boxes: Sequence[BoundingBox], snapshots: Sequence[StoredSnapshot]
+        self,
+        event: MotionEvent,
+        boxes: Sequence[BoundingBox],
+        snapshots: Sequence[StoredSnapshot],
+        *,
+        snapshot_at: datetime | None = None,
+        clip_started_at: datetime | None = None,
     ) -> None:
         self._maybe_fail()
         self.log.append(f"stored end {event.id}")
         self.completed.append((event, snapshots))
+        self.moments.append((snapshot_at, clip_started_at))
 
     def _maybe_fail(self) -> None:
         if self.broken:
@@ -53,6 +61,9 @@ class FakeRepository:
     async def after(
         self, event_id: str, *, limit: int
     ) -> Sequence[EventRecord]:  # pragma: no cover
+        return []
+
+    async def activity(self, **_: object) -> Sequence[ActivityBucket]:  # pragma: no cover
         return []
 
     async def expired(self, *_: object, **__: object) -> Sequence[EventRecord]:  # pragma: no cover

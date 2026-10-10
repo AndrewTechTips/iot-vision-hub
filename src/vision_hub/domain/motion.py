@@ -56,4 +56,5 @@ class MotionEvent:
     # off, no model, or the event never finished) and the highest score of the checks.
     person: bool | None = None
     person_confidence: float | None = None
+    person_at: datetime | None = None  # when the frame the person was found on was captured
     alert: bool = True  # False when the camera alerts on people only and none was seen

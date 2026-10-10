@@ -85,6 +85,7 @@ class ClipRecorder:
         if not self._recording:
             return None
         writer, path, size, written = self._writer, self._path, self._size, self._written
+        first_at = self._first_at
         self._writer = None
         try:
             if writer is None or path is None or size is None or written == 0:
@@ -100,6 +101,7 @@ class ClipRecorder:
                 duration_seconds=written / self._fps,
                 width=size[0],
                 height=size[1],
+                started_at=first_at,
             )
         finally:
             self.abort()

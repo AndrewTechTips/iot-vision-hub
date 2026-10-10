@@ -4,7 +4,7 @@ from typing import Literal, cast
 from pydantic import Field
 
 from vision_hub.core.security import UrlSigner
-from vision_hub.domain.history import EventRecord
+from vision_hub.domain.history import ActivityBucket, EventRecord
 from vision_hub.domain.motion import BoundingBox
 from vision_hub.domain.storage import IMAGE_KINDS, SnapshotKind
 from vision_hub.schemas.base import ApiSchema
@@ -22,6 +22,9 @@ class ClipLink(ApiSchema):
     url: str = Field(description="Signed, expiring link: usable directly in a <video> tag")
     content_type: str = Field(description='"video/webm" (VP8)')
     size_bytes: int
+    started_at: datetime | None = Field(
+        description="When the clip's first frame was captured (its 0:00); null for older events"
+    )
 
 
 class EventOut(ApiSchema):
@@ -38,6 +41,12 @@ class EventOut(ApiSchema):
         description="A person was seen; null when nobody could check (detection off, no model)"
     )
     person_confidence: float | None = Field(description="Best person score of the checks")
+    person_at: datetime | None = Field(
+        description="When the frame a person was found on was captured; null without a person"
+    )
+    snapshot_at: datetime | None = Field(
+        description="When the snapshot's frame, the one with the most motion, was captured"
+    )
     alert: bool = Field(
         description="Raised an alert (false: the camera alerts on people only and none was seen)"
     )
@@ -71,6 +80,7 @@ class EventOut(ApiSchema):
                 url=f"{resource}?expires={expires}&signature={signature}",
                 content_type=SnapshotKind.CLIP.content_type,
                 size_bytes=stored.size_bytes,
+                started_at=record.clip_started_at,
             )
         duration = (event.ended_at - event.started_at).total_seconds() if event.ended_at else None
         return cls(
@@ -85,6 +95,8 @@ class EventOut(ApiSchema):
             motion_frames=event.motion_frames,
             person=event.person,
             person_confidence=event.person_confidence,
+            person_at=event.person_at,
+            snapshot_at=record.snapshot_at,
             alert=event.alert,
             boxes=list(record.boxes),
             snapshots=links,
@@ -100,3 +112,29 @@ def snapshot_resource(base_path: str, event_id: str, kind: SnapshotKind) -> str:
 def clip_resource(base_path: str, event_id: str) -> str:
     """The signed part of a clip URL."""
     return f"{base_path}/events/{event_id}/clip"
+
+
+class ActivityBucketOut(ApiSchema):
+    device_id: str
+    start: datetime = Field(description="The hour (UTC) these events started in")
+    events: int
+    people: int = Field(description="Events with a person seen")
+    alerts: int = Field(description="Events that raised an alert")
+
+    @classmethod
+    def from_bucket(cls, bucket: ActivityBucket) -> ActivityBucketOut:
+        return cls(
+            device_id=bucket.device_id,
+            start=bucket.start,
+            events=bucket.events,
+            people=bucket.people,
+            alerts=bucket.alerts,
+        )
+
+
+class ActivityOut(ApiSchema):
+    since: datetime
+    until: datetime
+    buckets: list[ActivityBucketOut] = Field(
+        description="Per camera and hour, oldest first; hours without events are left out"
+    )

@@ -52,6 +52,24 @@ class TestRecording:
         assert record.snapshots[SnapshotKind.CLEAN].path == "2026/10/01/1-clean.jpg"
         assert record.event.ended_at == event(1).ended_at
 
+    async def test_moments_are_kept(self, sessions: Sessions) -> None:
+        repository = SqlEventRepository(sessions)
+        found = T0 + timedelta(seconds=2)
+
+        await repository.complete(
+            replace(event(3), person=True, person_at=found),
+            [],
+            [],
+            snapshot_at=T0 + timedelta(seconds=3),
+            clip_started_at=T0 - timedelta(seconds=3),
+        )
+        record = await repository.get(event(3).id)
+
+        assert record is not None
+        assert record.event.person_at == found
+        assert record.snapshot_at == T0 + timedelta(seconds=3)
+        assert record.clip_started_at == T0 - timedelta(seconds=3)
+
     async def test_complete_without_a_recorded_start(self, sessions: Sessions) -> None:
         repository = SqlEventRepository(sessions)
 
@@ -126,6 +144,43 @@ class TestPersons:
         assert (stored["3"].person, stored["3"].person_confidence) == (None, None)
         assert [r.event.id[-1] for r in with_person] == ["1"]
         assert [r.event.id[-1] for r in without] == ["2"]  # unchecked events match neither
+
+
+class TestActivity:
+    async def test_counts_per_camera_and_hour_in_the_database(self, sessions: Sessions) -> None:
+        repository = SqlEventRepository(sessions)
+        seen = [
+            (1, "porch", T0 + timedelta(minutes=1), True, True),
+            (2, "porch", T0 + timedelta(minutes=59, seconds=59), False, False),
+            (3, "porch", T0 + timedelta(hours=1), None, True),  # the next hour
+            (4, "gate", T0 + timedelta(minutes=30), True, True),
+            (5, "gate", T0 - timedelta(days=2), True, True),  # before the window
+        ]
+        for n, device, started, person, alert in seen:
+            base = event(n, device, started=started)
+            await repository.complete(replace(base, person=person, alert=alert), [], [])
+
+        day = timedelta(days=1)
+        buckets = await repository.activity(since=T0 - day, until=T0 + day)
+
+        assert [(b.device_id, b.start, b.events, b.people, b.alerts) for b in buckets] == [
+            ("gate", T0, 1, 1, 1),
+            ("porch", T0, 2, 1, 1),
+            ("porch", T0 + timedelta(hours=1), 1, 0, 1),
+        ]
+        assert all(b.start.tzinfo is UTC for b in buckets)
+
+    async def test_one_camera_and_an_empty_window(self, sessions: Sessions) -> None:
+        repository = SqlEventRepository(sessions)
+        for n in range(1, 5):
+            await repository.complete(event(n, "porch" if n % 2 else "gate"), [], [])
+
+        hour = timedelta(hours=1)
+        porch = await repository.activity(since=T0, until=T0 + hour, device_id="porch")
+        empty = await repository.activity(since=T0 + hour, until=T0 + 2 * hour)
+
+        assert [(b.device_id, b.events) for b in porch] == [("porch", 2)]
+        assert empty == []
 
 
 class TestRetention:

@@ -1,5 +1,6 @@
 """Event history: list and inspect recorded motion events, fetch their snapshots."""
 
+from datetime import timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query
@@ -7,9 +8,11 @@ from fastapi.responses import FileResponse
 
 from vision_hub.api.deps import ContainerDep, EventServiceDep
 from vision_hub.api.v1 import API_V1_PREFIX
+from vision_hub.core.errors import BadRequestError
+from vision_hub.core.security import utc_now
 from vision_hub.domain.storage import SnapshotKind
 from vision_hub.schemas.base import UtcDateTime
-from vision_hub.schemas.events import EventOut, ImageKind
+from vision_hub.schemas.events import ActivityBucketOut, ActivityOut, EventOut, ImageKind
 from vision_hub.schemas.pagination import Page, PageParamsDep, encode_cursor
 from vision_hub.schemas.problem import ProblemDetail
 
@@ -54,6 +57,36 @@ async def list_events(
     return Page(
         items=[EventOut.from_record(r, container.url_signer, API_V1_PREFIX) for r in items],
         next_cursor=next_cursor,
+    )
+
+
+ACTIVITY_DEFAULT = timedelta(days=28)
+ACTIVITY_MAX = timedelta(days=92)
+
+
+@router.get("/activity", summary="Event counts per hour", responses=_problems(400))
+async def activity(
+    events: EventServiceDep,
+    device_id: Annotated[str | None, Query(max_length=63)] = None,
+    since: Annotated[
+        UtcDateTime | None, Query(description="Started at or after (UTC); default 28 days ago")
+    ] = None,
+    until: Annotated[
+        UtcDateTime | None, Query(description="Started before (UTC); default now")
+    ] = None,
+) -> ActivityOut:
+    """How many events each camera started per hour, with how many had a person and how many
+    alerted: counted by the database, for heatmaps and sparklines. Hours are UTC instants, so a
+    client can fold them into its own time zone. At most 92 days at once."""
+    until = until or utc_now()
+    since = since or until - ACTIVITY_DEFAULT
+    if since >= until:
+        raise BadRequestError("`since` must be before `until`.")
+    if until - since > ACTIVITY_MAX:
+        raise BadRequestError("Ask for at most 92 days at once.")
+    buckets = await events.activity(since=since, until=until, device_id=device_id)
+    return ActivityOut(
+        since=since, until=until, buckets=[ActivityBucketOut.from_bucket(b) for b in buckets]
     )
 
 

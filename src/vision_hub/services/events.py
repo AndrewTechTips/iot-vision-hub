@@ -11,7 +11,7 @@ from vision_hub.core.metrics import Metrics
 from vision_hub.core.security import utc_now
 from vision_hub.core.tasks import TaskSupervisor
 from vision_hub.domain.events import CameraEvent, MotionEndedEvent, MotionStartedEvent
-from vision_hub.domain.history import EventRecord, EventRepository
+from vision_hub.domain.history import ActivityBucket, EventRecord, EventRepository
 from vision_hub.domain.motion import MotionEvent
 from vision_hub.domain.storage import SnapshotKind, SnapshotStore, StoredSnapshot
 
@@ -87,7 +87,13 @@ class EventRecorder:
                     for kind, data in files.items()
                     if data
                 ]
-                await self._repository.complete(motion, event.boxes, stored)
+                await self._repository.complete(
+                    motion,
+                    event.boxes,
+                    stored,
+                    snapshot_at=event.snapshot_at,
+                    clip_started_at=event.clip.started_at if event.clip else None,
+                )
             case _:
                 pass  # device status changes are live-only
 
@@ -115,6 +121,11 @@ class EventService:
             before=before,
             person=person,
         )
+
+    async def activity(
+        self, *, since: datetime, until: datetime, device_id: str | None = None
+    ) -> Sequence[ActivityBucket]:
+        return await self._repository.activity(since=since, until=until, device_id=device_id)
 
     async def get(self, event_id: str) -> EventRecord:
         record = await self._repository.get(event_id)

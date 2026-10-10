@@ -173,14 +173,20 @@ def _export_event(
     if ended.clip is not None:
         name = f"event-{number}.webm"
         (directory / name).write_bytes(ended.clip.data)
-        clip = {"path": f"{camera}/{name}", "size_bytes": len(ended.clip.data)}
+        started = ended.clip.started_at
+        clip = {
+            "path": f"{camera}/{name}",
+            "size_bytes": len(ended.clip.data),
+            "started_at": None if started is None else round(offset(started), 3),
+        }
     return {
-        "start": round(start, 3),
+        "start": round(start, 3),  # seconds into the loop, like every moment here
         "end": round(end, 3),
         "peak_area_ratio": round(event.peak_area_ratio, 4),
         "motion_frames": event.motion_frames,
         "person": event.person,
         "person_confidence": event.person_confidence,
+        "person_at": None if event.person_at is None else round(offset(event.person_at), 3),
         "alert": event.alert,
         "boxes": [
             {"x": box.x, "y": box.y, "width": box.width, "height": box.height}

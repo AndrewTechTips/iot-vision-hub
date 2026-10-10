@@ -74,6 +74,10 @@ def test_records_frames_and_events_of_one_pass(tmp_path: Path) -> None:
     assert 1.9 <= event["start"] <= 2.6
     assert event["start"] < event["end"] <= 5.5
     assert (event["person"], event["person_confidence"], event["alert"]) == (True, 0.9, True)
+    # Its moments, in loop time: found by the first check, on the frame that confirmed the
+    # motion (a frame or two after its first), and the clip from the pre-roll.
+    assert event["person_at"] == pytest.approx(event["start"], abs=0.25)
+    assert event["clip"]["started_at"] < event["start"] <= event["snapshot_at"] <= event["end"]
     for kind in ("clean", "annotated", "thumbnail"):
         assert (output / event["snapshots"][kind]["path"]).read_bytes()[:2] == b"\xff\xd8"
     assert (output / event["clip"]["path"]).stat().st_size == event["clip"]["size_bytes"]

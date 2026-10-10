@@ -201,8 +201,33 @@ class TestEventChecks:
         check.finish(FRAME, verdicts.append)
         checker.close()
 
-        assert verdicts == [PersonVerdict(confidence=0.8, person=True)]
+        assert verdicts == [PersonVerdict(confidence=0.8, person=True, at=at(0))]
         assert detector.calls == 1
+
+    def test_the_last_look_dates_a_person_found_on_the_best_frame(self) -> None:
+        detector = GatedDetector(score=0.8)
+        detector.gate.set()
+        checker = PersonChecker(detector)
+        check = checker.event(T0)
+        verdicts: list[PersonVerdict] = []
+
+        check.finish(FRAME, verdicts.append, at(7))
+        checker.close()
+
+        assert verdicts == [PersonVerdict(confidence=0.8, person=True, at=at(7))]
+
+    def test_no_person_no_moment(self) -> None:
+        detector = GatedDetector(score=0.2)
+        detector.gate.set()
+        checker = PersonChecker(detector)
+        check = checker.event(T0)
+        check.offer(FRAME, at(0))
+        verdicts: list[PersonVerdict] = []
+
+        check.finish(FRAME, verdicts.append, at(3))
+        checker.close()
+
+        assert verdicts == [PersonVerdict(confidence=0.2, person=False, at=None)]
 
 
 class TestModelFile:

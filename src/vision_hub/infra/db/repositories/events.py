@@ -1,9 +1,13 @@
 from collections.abc import Collection, Sequence
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import Select, delete, literal, select, tuple_, update
+from sqlalchemy import Integer, Select, case, delete, func, literal, select, tuple_, update
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.sql.compiler import SQLCompiler
+from sqlalchemy.sql.functions import FunctionElement
 
-from vision_hub.domain.history import EventRecord
+from vision_hub.domain.history import ActivityBucket, EventRecord
 from vision_hub.domain.motion import BoundingBox, MotionEvent
 from vision_hub.domain.storage import SnapshotKind, StoredSnapshot
 from vision_hub.infra.db.engine import Sessions
@@ -19,7 +23,13 @@ class SqlEventRepository:
             session.add(_new_row(event))
 
     async def complete(
-        self, event: MotionEvent, boxes: Sequence[BoundingBox], snapshots: Sequence[StoredSnapshot]
+        self,
+        event: MotionEvent,
+        boxes: Sequence[BoundingBox],
+        snapshots: Sequence[StoredSnapshot],
+        *,
+        snapshot_at: datetime | None = None,
+        clip_started_at: datetime | None = None,
     ) -> None:
         async with self._sessions.begin() as session:
             row = await session.get(MotionEventRow, event.id)
@@ -31,7 +41,10 @@ class SqlEventRepository:
             row.motion_frames = event.motion_frames
             row.person = event.person
             row.person_confidence = event.person_confidence
+            row.person_at = event.person_at
             row.alert = event.alert
+            row.snapshot_at = snapshot_at
+            row.clip_started_at = clip_started_at
             row.boxes = [{"x": b.x, "y": b.y, "width": b.width, "height": b.height} for b in boxes]
             row.snapshots = [
                 SnapshotRow(kind=s.kind.value, path=s.path, size_bytes=s.size_bytes)
@@ -83,6 +96,37 @@ class SqlEventRepository:
             .limit(limit)
         )
         return await self._fetch(query)
+
+    async def activity(
+        self, *, since: datetime, until: datetime, device_id: str | None = None
+    ) -> Sequence[ActivityBucket]:
+        hour = epoch_hour(MotionEventRow.started_at).label("hour")
+        query = (
+            select(
+                MotionEventRow.device_id,
+                hour,
+                func.count().label("events"),
+                func.sum(case((MotionEventRow.person.is_(True), 1), else_=0)).label("people"),
+                func.sum(case((MotionEventRow.alert.is_(True), 1), else_=0)).label("alerts"),
+            )
+            .where(MotionEventRow.started_at >= since, MotionEventRow.started_at < until)
+            .group_by(MotionEventRow.device_id, hour)
+            .order_by(hour, MotionEventRow.device_id)
+        )
+        if device_id is not None:
+            query = query.where(MotionEventRow.device_id == device_id)
+        async with self._sessions() as session:
+            rows = (await session.execute(query)).all()
+        return [
+            ActivityBucket(
+                device_id=row.device_id,
+                start=datetime.fromtimestamp(int(row.hour) * 3600, UTC),
+                events=int(row.events),
+                people=int(row.people or 0),
+                alerts=int(row.alerts or 0),
+            )
+            for row in rows
+        ]
 
     async def expired(
         self,
@@ -151,6 +195,7 @@ def _to_record(row: MotionEventRow) -> EventRecord:
             motion_frames=row.motion_frames,
             person=row.person,
             person_confidence=row.person_confidence,
+            person_at=row.person_at,
             alert=row.alert,
         ),
         boxes=tuple(BoundingBox(**box) for box in row.boxes),
@@ -159,4 +204,28 @@ def _to_record(row: MotionEventRow) -> EventRecord:
             for s in row.snapshots
         },
         interrupted=row.interrupted,
+        snapshot_at=row.snapshot_at,
+        clip_started_at=row.clip_started_at,
     )
+
+
+class epoch_hour(FunctionElement[int]):  # noqa: N801 - reads like the SQL function it stands for
+    """Hours since the Unix epoch (UTC) of a timestamp column: a portable GROUP BY key. The
+    database does the counting, and the result maps back to an exact instant on any backend."""
+
+    type = Integer()
+    inherit_cache = True
+    name = "epoch_hour"
+
+
+@compiles(epoch_hour, "postgresql")
+def _epoch_hour_postgresql(element: epoch_hour, compiler: SQLCompiler, **kw: Any) -> str:
+    column = compiler.process(element.clauses, **kw)
+    return f"CAST(floor(extract(epoch FROM {column}) / 3600) AS INTEGER)"
+
+
+@compiles(epoch_hour, "sqlite")
+def _epoch_hour_sqlite(element: epoch_hour, compiler: SQLCompiler, **kw: Any) -> str:
+    # Stored as UTC text without an offset (UtcDateTime); strftime reads it as UTC.
+    column = compiler.process(element.clauses, **kw)
+    return f"CAST(strftime('%s', {column}) AS INTEGER) / 3600"

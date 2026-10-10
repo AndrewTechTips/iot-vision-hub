@@ -30,6 +30,7 @@ class VideoClip:
     duration_seconds: float
     width: int
     height: int
+    started_at: datetime | None = None  # when its first frame was captured: the clip's 0:00
 
 
 @dataclass(frozen=True, slots=True)
