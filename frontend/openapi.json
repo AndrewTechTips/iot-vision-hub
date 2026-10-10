@@ -2935,6 +2935,11 @@
             ],
             "title": "Alert On",
             "default": "motion"
+          },
+          "tamper_alerts": {
+            "type": "boolean",
+            "title": "Tamper Alerts",
+            "default": true
           }
         },
         "additionalProperties": false,
@@ -3083,6 +3088,17 @@
                 "type": "null"
               }
             ]
+          },
+          "tampering": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TamperOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set while the camera is covered, out of focus or turned away"
           }
         },
         "type": "object",
@@ -3097,7 +3113,8 @@
           "status",
           "running",
           "stream",
-          "last_event"
+          "last_event",
+          "tampering"
         ],
         "title": "DeviceOut"
       },
@@ -3190,6 +3207,17 @@
         "title": "DeviceUpdate",
         "description": "Partial update: only the fields present in the request change."
       },
+      "EventKind": {
+        "type": "string",
+        "enum": [
+          "motion",
+          "covered",
+          "blurred",
+          "moved"
+        ],
+        "title": "EventKind",
+        "description": "What an event is: motion, or the camera being tampered with (vision/tamper.py)."
+      },
       "EventOut": {
         "properties": {
           "id": {
@@ -3199,6 +3227,10 @@
           "device_id": {
             "type": "string",
             "title": "Device Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EventKind",
+            "description": "\"motion\", or the camera being tampered with: \"covered\", \"blurred\", \"moved\""
           },
           "started_at": {
             "type": "string",
@@ -3332,6 +3364,7 @@
         "required": [
           "id",
           "device_id",
+          "kind",
           "started_at",
           "ended_at",
           "duration_seconds",
@@ -4171,6 +4204,30 @@
         "title": "SyntheticSourceConfig",
         "description": "Generated scene with a figure that walks through periodically; no hardware needed."
       },
+      "TamperOut": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "title": "Event Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EventKind",
+            "description": "\"covered\", \"blurred\" or \"moved\""
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Since"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event_id",
+          "kind",
+          "since"
+        ],
+        "title": "TamperOut"
+      },
       "TicketOut": {
         "properties": {
           "ticket": {
@@ -4428,6 +4485,11 @@
             "title": "Started At",
             "type": "string"
           },
+          "kind": {
+            "$ref": "#/components/schemas/EventKind",
+            "default": "motion",
+            "description": "\"motion\", or the camera being tampered with: \"covered\", \"blurred\", \"moved\""
+          },
           "ended_at": {
             "anyOf": [
               {
@@ -4487,6 +4549,7 @@
         "required": [
           "event_id",
           "started_at",
+          "kind",
           "ended_at",
           "peak_area_ratio",
           "motion_frames",
@@ -4549,11 +4612,17 @@
             "format": "date-time",
             "title": "Started At",
             "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EventKind",
+            "default": "motion",
+            "description": "\"motion\", or the camera being tampered with: \"covered\", \"blurred\", \"moved\""
           }
         },
         "required": [
           "event_id",
-          "started_at"
+          "started_at",
+          "kind"
         ],
         "title": "MotionStartedData",
         "type": "object"

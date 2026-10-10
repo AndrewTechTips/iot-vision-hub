@@ -12,11 +12,18 @@ import { RECORDING_DIR, detectionsAt, passed, uuid7 } from "./recording.js";
 const HISTORY_MS = 90 * 60_000;
 const TICK_MS = 100;
 
+/** A covering must last this long before it counts, and the view this long to be back (the
+ * hub's defaults, vision/tamper.py). */
+const TAMPER_HOLD_MS = 8_000;
+const TAMPER_CLEAR_MS = 4_000;
+
 /**
  * @typedef {{
  *   started: (camera: Camera, id: string, startedAt: string) => void,
  *   ended: (camera: Camera, event: MotionEvent) => void,
  *   status: (camera: Camera) => void,
+ *   tampered: (camera: Camera, event: MotionEvent) => void,
+ *   restored: (camera: Camera, event: MotionEvent) => void,
  * }} CameraListener
  */
 
@@ -46,6 +53,22 @@ export class Camera {
     this.lastFrameAt = new Date().toISOString();
     /** @type {ReturnType<typeof setInterval> | undefined} */
     this.timer = undefined;
+    /** Someone's hand over the lens, from when to when (ms). */
+    this.coveredFrom = 0;
+    this.coveredUntil = 0;
+    /** @type {MotionEvent | null} the open tamper event */
+    this.tampering = null;
+  }
+
+  get covered() {
+    const now = Date.now();
+    return now >= this.coveredFrom && now < this.coveredUntil;
+  }
+
+  /** @param {number} seconds */
+  cover(seconds) {
+    this.coveredFrom = Date.now();
+    this.coveredUntil = this.coveredFrom + seconds * 1000;
   }
 
   get id() {
@@ -62,7 +85,7 @@ export class Camera {
 
   /** What the hub detected on the frame now showing (null: nothing, or the camera is off). */
   detections() {
-    if (this.status !== "online") return null;
+    if (this.status !== "online" || this.covered) return null;
     return detectionsAt(this.recording.frames, this.time);
   }
 
@@ -96,6 +119,7 @@ export class Camera {
   }
 
   tick() {
+    this.watchTampering();
     const now = this.time;
     const { duration, events } = this.recording;
     this.lastFrameAt = new Date().toISOString();
@@ -110,6 +134,28 @@ export class Camera {
       }
     }
     this.previous = now;
+  }
+
+  /** The hub's tamper monitor, played: covered long enough, then back long enough. */
+  watchTampering() {
+    const now = Date.now();
+    if (!this.tampering && this.covered && now - this.coveredFrom >= TAMPER_HOLD_MS) {
+      const started = new Date(this.coveredFrom);
+      this.tampering = tamperOut(
+        this.id,
+        uuid7(started.getTime()),
+        started,
+        null,
+        darkSnapshot(this),
+      );
+      this.listener.tampered(this, this.tampering);
+    } else if (this.tampering && !this.covered && now - this.coveredUntil >= TAMPER_CLEAR_MS) {
+      const ended = new Date(now);
+      const event = { ...this.tampering, ended_at: ended.toISOString(), complete: true };
+      event.duration_seconds = Math.round((ended.getTime() - Date.parse(event.started_at)) / 1000);
+      this.tampering = null;
+      this.listener.restored(this, event);
+    }
   }
 
   /** @param {Date} endedAt */
@@ -171,6 +217,7 @@ export function eventOut(deviceId, id, started, recorded, ended) {
     motion_frames: recorded.motion_frames,
     person: recorded.person,
     person_confidence: recorded.person_confidence,
+    kind: "motion",
     person_at: recorded.person_at === null ? null : moment(recorded.person_at),
     snapshot_at: moment(recorded.snapshot_at),
     alert: recorded.alert,
@@ -189,4 +236,67 @@ export function eventOut(deviceId, id, started, recorded, ended) {
         }
       : null,
   };
+}
+
+/**
+ * A tamper event as the hub's API returns it: the picture at the time, no clip.
+ * @param {string} deviceId
+ * @param {string} id
+ * @param {Date} started
+ * @param {Date | null} ended
+ * @param {{ url: string, size_bytes: number }} snapshot
+ * @returns {MotionEvent}
+ */
+function tamperOut(deviceId, id, started, ended, snapshot) {
+  return {
+    id,
+    device_id: deviceId,
+    kind: "covered",
+    started_at: started.toISOString(),
+    ended_at: ended?.toISOString() ?? null,
+    duration_seconds: null,
+    complete: false,
+    interrupted: false,
+    peak_area_ratio: 0,
+    motion_frames: 0,
+    person: null,
+    person_confidence: null,
+    person_at: null,
+    snapshot_at: started.toISOString(),
+    alert: true,
+    boxes: [],
+    snapshots: /** @type {const} */ (["clean", "annotated", "thumbnail"]).map((kind) => ({
+      kind,
+      ...snapshot,
+    })),
+    clip: null,
+  };
+}
+
+/**
+ * What a covered camera shows: its picture, dark and smeared. The hub stores it as the event's
+ * snapshot; here it is a JPEG in memory.
+ * @param {Camera} camera
+ */
+function darkSnapshot(camera) {
+  const canvas = document.createElement("canvas");
+  canvas.width = camera.recording.width;
+  canvas.height = camera.recording.height;
+  coveredPicture(canvas.getContext("2d"), camera.video, canvas.width, canvas.height);
+  const data = canvas.toDataURL("image/jpeg", 0.8);
+  return { url: data, size_bytes: Math.round((data.length * 3) / 4) };
+}
+
+/**
+ * Draws a hand over the lens: the picture blurred to nothing and nearly black.
+ * @param {CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null} context
+ * @param {HTMLVideoElement} video
+ * @param {number} width
+ * @param {number} height
+ */
+export function coveredPicture(context, video, width, height) {
+  if (!context) return;
+  context.filter = "blur(40px) brightness(0.12)";
+  context.drawImage(video, 0, 0, width, height);
+  context.filter = "none";
 }

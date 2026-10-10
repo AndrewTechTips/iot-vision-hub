@@ -105,6 +105,32 @@ test("settings and camera controls work in memory", async ({ page }, { project }
   await expect(page.getByText("stopped").first()).toBeVisible();
 });
 
+test("a covered camera raises a red alert until it is back", async ({ page }) => {
+  await page.goto("./?tamper"); // covers the patio camera after 3 s instead of a minute
+
+  const patio = page.locator(".camera-tile", { hasText: "Patio" });
+  await patio.scrollIntoViewIfNeeded();
+  const alert = page.locator(".toast", { hasText: "Patio camera covered" });
+  await expect(alert).toBeVisible({ timeout: 20_000 }); // it has to last 8 s to count
+  await expect(patio).toHaveAttribute("data-tamper", "");
+  await expect(patio.locator(".camera-tamper")).toHaveText("Covered");
+  await expect(patio).toContainText("Camera covered now");
+
+  await expect(page.locator(".toast", { hasText: "Patio camera is back" })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(patio).not.toHaveAttribute("data-tamper");
+
+  // Through the app: a reload would start a fresh demo hub.
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .first()
+    .getByRole("link", { name: "Events" })
+    .click();
+  const row = page.locator(".event-row", { hasText: "Patio" }).filter({ hasText: "Covered" });
+  await expect(row.first()).toContainText(/Camera covered for \d+ s/);
+});
+
 test("the demo passes the same accessibility audit", async ({ page }) => {
   await page.goto("./");
   await expect(page.locator(".camera-tile").first()).toHaveAttribute("data-state", "playing");

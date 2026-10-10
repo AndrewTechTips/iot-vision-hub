@@ -2,11 +2,13 @@
 // Cameras that alert on people only toast once the event is over, and only if a person was
 // seen (the hub decides: `alert` on the ended event). Events replayed after a reconnect are
 // summed up in a single toast instead of one each.
+// A camera covered, blurred or moved alerts at once, in red, until it is back to normal.
 // In a background tab, the page title counts unseen alerts: "(2) Live – Vision Hub".
 
 import { getEvent, snapshotUrl } from "../api/events.js";
 import { alertsOn, deviceName } from "../state/devices.js";
 import { formatClock, formatDuration } from "../ui/time.js";
+import { TAMPER, tamperOf } from "../ui/tamper.js";
 import { dismissToast, toast } from "../ui/toast.js";
 
 /** @typedef {import("../api/types.js").MessageOf<"motion.started">} MotionStarted */
@@ -30,12 +32,21 @@ export function startAlerts(realtime, { navigate }) {
   const stop = realtime.listen((message) => {
     switch (message.type) {
       case "motion.started":
+        if (tamperOf(message.data.kind)) {
+          if (message.replay) missed += 1;
+          else tampered(message);
+          return;
+        }
         // People-only cameras: nothing to say until the hub knows whether it was a person.
         if (alertsOn(message.device_id) === "person") return;
         if (message.replay) missed += 1;
         else started(message);
         return;
       case "motion.ended":
+        if (tamperOf(message.data.kind)) {
+          restored(message);
+          return;
+        }
         if (!message.data.alert) {
           quiet(message);
           return;
@@ -65,6 +76,45 @@ export function startAlerts(realtime, { navigate }) {
       action: { label: "Watch", run: () => navigate(`/devices/${encodeURIComponent(device)}`) },
     });
     attention.bump();
+  }
+
+  /** A camera tampered with: says so until it is back.
+   * @param {MotionStarted} message */
+  function tampered(message) {
+    const device = message.device_id;
+    const kind = /** @type {import("../ui/tamper.js").TamperKind} */ (tamperOf(message.data.kind));
+    toast({
+      key: `tamper:${device}`,
+      tone: "alarm",
+      title: `${deviceName(device)} camera ${TAMPER[kind].done}`,
+      message: `Since ${formatClock(message.data.started_at)}. ${TAMPER[kind].why}`,
+      duration: 0, // until it is back
+      action: { label: "Watch", run: () => navigate(`/devices/${encodeURIComponent(device)}`) },
+    });
+    attention.bump();
+  }
+
+  /** @param {MotionEnded} message */
+  function restored(message) {
+    const device = message.device_id;
+    const { event_id: id, started_at: start, ended_at: end } = message.data;
+    const kind = /** @type {import("../ui/tamper.js").TamperKind} */ (tamperOf(message.data.kind));
+    if (message.replay) {
+      dismissToast(`tamper:${device}`);
+      return;
+    }
+    const lasted = end ? (Date.parse(end) - Date.parse(start)) / 1000 : null;
+    toast({
+      key: `tamper:${device}`,
+      tone: "signal",
+      title: `${deviceName(device)} camera is back`,
+      message:
+        lasted === null
+          ? `It was ${TAMPER[kind].done}.`
+          : `It was ${TAMPER[kind].done} for ${formatDuration(lasted)}.`,
+      duration: ENDED_MS,
+      action: { label: "View", run: () => navigate(`/events?event=${encodeURIComponent(id)}`) },
+    });
   }
 
   /** No alert after all (the camera's setting changed mid-event): take back "motion now".

@@ -30,6 +30,10 @@ const TOKEN_SECONDS = 15 * 60;
 /** Where each camera's loop begins, as a lead (seconds) before its first event: something
  * happens on every camera within a few seconds of opening the demo. */
 const LEADS = [2, 6, 3.5, 1.5];
+/** The patio camera's covering: first after a minute, then every few minutes. */
+const FIRST_COVER_MS = 70_000;
+const COVER_EVERY_MS = 4 * 60_000;
+const COVER_SECONDS = 18;
 
 export async function startDemoHub() {
   const recording = await loadRecording();
@@ -57,7 +61,30 @@ export async function startDemoHub() {
           type: "motion.started",
           device_id: camera.id,
           replay: false,
-          data: { event_id: id, started_at: startedAt },
+          data: { event_id: id, started_at: startedAt, kind: "motion" },
+        });
+      },
+      tampered(camera, event) {
+        events.unshift(event);
+        broadcast({
+          v: 1,
+          ts: new Date().toISOString(),
+          type: "motion.started",
+          device_id: camera.id,
+          replay: false,
+          data: { event_id: event.id, started_at: event.started_at, kind: event.kind },
+        });
+      },
+      restored(camera, event) {
+        const index = events.findIndex((item) => item.id === event.id);
+        if (index >= 0) events[index] = event;
+        broadcast({
+          v: 1,
+          ts: event.ended_at ?? event.started_at,
+          type: "motion.ended",
+          device_id: camera.id,
+          replay: false,
+          data: endedData(event),
         });
       },
       ended(camera, event) {
@@ -68,17 +95,7 @@ export async function startDemoHub() {
           type: "motion.ended",
           device_id: camera.id,
           replay: false,
-          data: {
-            event_id: event.id,
-            started_at: event.started_at,
-            ended_at: event.ended_at,
-            peak_area_ratio: event.peak_area_ratio,
-            motion_frames: event.motion_frames,
-            boxes: event.boxes,
-            person: event.person,
-            person_confidence: event.person_confidence,
-            alert: event.alert,
-          },
+          data: endedData(event),
         });
       },
       status(camera) {
@@ -119,7 +136,10 @@ export async function startDemoHub() {
 
   /** @param {Camera} camera @returns {Device} */
   function deviceOut(camera) {
-    const last = events.find((event) => event.device_id === camera.id);
+    // Like the hub: the last motion event that ended (tampering is reported on its own).
+    const last = events.find(
+      (event) => event.device_id === camera.id && event.kind === "motion" && event.complete,
+    );
     const { recording: recorded } = camera;
     return {
       id: camera.id,
@@ -135,6 +155,13 @@ export async function startDemoHub() {
         camera.status === "stopped"
           ? null
           : { width: recorded.width, height: recorded.height, last_frame_at: camera.lastFrameAt },
+      tampering: camera.tampering
+        ? {
+            event_id: camera.tampering.id,
+            kind: camera.tampering.kind,
+            since: camera.tampering.started_at,
+          }
+        : null,
       last_event: last
         ? {
             id: last.id,
@@ -308,6 +335,16 @@ export async function startDemoHub() {
   );
 
   for (const camera of cameras) void camera.start();
+
+  // Now and then someone puts a hand over the patio camera, to show tamper alerts.
+  const patio = byId.get("patio");
+  if (patio) {
+    const cover = () => patio.status === "online" && patio.cover(COVER_SECONDS);
+    // "?tamper" in the address starts the first one at once.
+    const soon = new URLSearchParams(location.search).has("tamper");
+    setTimeout(cover, soon ? 3_000 : FIRST_COVER_MS);
+    setInterval(cover, COVER_EVERY_MS);
+  }
 }
 
 /** @param {string} username @returns {TokenResponse} */
@@ -403,4 +440,24 @@ function problem(status, title, detail) {
     }),
     { status, headers: { "Content-Type": "application/problem+json" } },
   );
+}
+
+/**
+ * The data of a "motion.ended" message for a stored event.
+ * @param {MotionEvent} event
+ * @returns {import("../api/types.js").MessageOf<"motion.ended">["data"]}
+ */
+export function endedData(event) {
+  return {
+    event_id: event.id,
+    started_at: event.started_at,
+    ended_at: event.ended_at,
+    peak_area_ratio: event.peak_area_ratio,
+    motion_frames: event.motion_frames,
+    boxes: event.boxes,
+    person: event.person,
+    person_confidence: event.person_confidence,
+    alert: event.alert,
+    kind: event.kind,
+  };
 }

@@ -115,9 +115,17 @@ async function staleWhileRevalidate(/** @type {Request} */ request) {
  *   started_at: string,
  *   duration_seconds: number | null,
  *   person: boolean | null,
+ *   tamper?: "covered" | "blurred" | "moved" | null,
  *   image: string | null,
  * } | { kind: "test" }} PushAlert
  */
+
+/** A camera tampered with: what to call it. */
+const TAMPER = {
+  covered: "covered",
+  blurred: "out of focus",
+  moved: "moved",
+};
 
 const ICON = "/icons/icon-192.png";
 const BADGE = "/icons/badge-96.png"; // Android's status bar: a white mark on transparent
@@ -155,11 +163,17 @@ async function notify(alert) {
   if (windows.some((client) => client.focused && client.visibilityState === "visible")) return;
 
   const lasted = alert.duration_seconds;
-  const what = alert.person ? `Person at ${alert.device_name}` : `Motion on ${alert.device_name}`;
+  const what = alert.tamper
+    ? `${alert.device_name} camera ${TAMPER[alert.tamper]}`
+    : alert.person
+      ? `Person at ${alert.device_name}`
+      : `Motion on ${alert.device_name}`;
   return registration.showNotification(what, {
-    body: lasted
-      ? `At ${clock(alert.started_at)}, for ${duration(lasted)}.`
-      : `At ${clock(alert.started_at)}.`,
+    body: alert.tamper
+      ? `Since ${clock(alert.started_at)}. Check on it.`
+      : lasted
+        ? `At ${clock(alert.started_at)}, for ${duration(lasted)}.`
+        : `At ${clock(alert.started_at)}.`,
     icon: ICON,
     badge: BADGE,
     // Shown large on Android and Windows; the link is signed, so no sign-in is needed.

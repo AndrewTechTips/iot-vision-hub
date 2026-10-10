@@ -10,6 +10,7 @@ import { h } from "../ui/dom.js";
 import { icon } from "../ui/icons.js";
 import { enter } from "../ui/motion.js";
 import { pageHeader } from "../ui/page.js";
+import { tamperOf } from "../ui/tamper.js";
 
 /** @typedef {import("../api/types.js").Device} Device */
 /** @typedef {ReturnType<typeof cameraTile>} Tile */
@@ -200,9 +201,14 @@ export default {
           summarise();
           return;
         case "motion.started":
-          tile?.setMotion(true, message.data.started_at);
+          if (tamperOf(message.data.kind)) tile?.setTamper(tamperOf(message.data.kind));
+          else tile?.setMotion(true, message.data.started_at);
           return;
         case "motion.ended":
+          if (tamperOf(message.data.kind)) {
+            tile?.setTamper(null);
+            return;
+          }
           tile?.setMotion(false, message.data.ended_at ?? message.data.started_at);
           if (!message.replay) tile?.countEvent();
           return;

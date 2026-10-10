@@ -176,6 +176,29 @@
     transform: none;
   }
 
+  /* Tampered with: a red chip where the motion chip sits, and a red ring. */
+  .camera-tamper {
+    left: auto;
+    right: 0.75rem;
+    color: var(--tone);
+    display: none;
+  }
+  .live-host[data-tamper] {
+    & .camera-tamper {
+      display: inline-flex;
+    }
+    & .camera-motion {
+      opacity: 0;
+    }
+    &::after {
+      opacity: 1;
+      border-color: var(--color-alarm);
+      box-shadow:
+        0 0 0 4px rgb(255 92 122 / 0.16),
+        0 0 36px -6px rgb(255 92 122 / 0.55);
+    }
+  }
+
   .camera-meta {
     display: flex;
     align-items: flex-end;

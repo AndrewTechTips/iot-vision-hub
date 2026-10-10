@@ -1,6 +1,8 @@
 // The demo hub's side of the realtime protocol (WS /api/v1/ws/events, docs/api-conventions.md):
 // a WebSocket look-alike the dashboard's realtime client talks to without knowing.
 
+import { endedData } from "./hub.js";
+
 /** @typedef {import("../api/types.js").ServerMessage} ServerMessage */
 /** @typedef {import("../api/types.js").ClientMessage} ClientMessage */
 /** @typedef {import("../api/types.js").MotionEvent} MotionEvent */
@@ -87,17 +89,7 @@ export class DemoSocket extends EventTarget {
         type: "motion.ended",
         device_id: event.device_id,
         replay: true,
-        data: {
-          event_id: event.id,
-          started_at: event.started_at,
-          ended_at: event.ended_at,
-          peak_area_ratio: event.peak_area_ratio,
-          motion_frames: event.motion_frames,
-          boxes: event.boxes,
-          person: event.person,
-          person_confidence: event.person_confidence,
-          alert: event.alert,
-        },
+        data: endedData(event),
       });
     }
     this.deliver({

@@ -4,6 +4,7 @@
 import { href } from "../paths.js";
 import { sparkline } from "./activity-chart.js";
 import { liveView } from "./live-view.js";
+import { TAMPER, tamperOf } from "./tamper.js";
 import { h } from "./dom.js";
 import { timeAgo } from "./time.js";
 
@@ -18,6 +19,8 @@ const GRID_FPS = 8;
 export function cameraTile(initial) {
   let device = initial;
   let motion = false;
+  /** @type {import("./tamper.js").TamperKind | null} */
+  let tamper = null;
   /** @type {string | null} */
   let lastMotionAt = null;
 
@@ -51,11 +54,13 @@ export function cameraTile(initial) {
   }
 
   function renderDetail() {
-    detail.textContent = motion
-      ? "Motion now"
-      : lastMotionAt
-        ? `Motion ${timeAgo(lastMotionAt)}`
-        : "No motion yet";
+    detail.textContent = tamper
+      ? `Camera ${TAMPER[tamper].done} now`
+      : motion
+        ? "Motion now"
+        : lastMotionAt
+          ? `Motion ${timeAgo(lastMotionAt)}`
+          : "No motion yet";
   }
 
   function fromDevice() {
@@ -64,6 +69,8 @@ export function cameraTile(initial) {
     lastMotionAt = last ? (last.ended_at ?? last.started_at) : null;
     name.textContent = device.name;
     view.setMotion(motion);
+    tamper = tamperOf(device.tampering?.kind);
+    view.setTamper(tamper);
     renderDetail();
   }
 
@@ -103,6 +110,12 @@ export function cameraTile(initial) {
     setWeek(counts) {
       week = [...counts];
       renderWeek();
+    },
+    /** @param {import("./tamper.js").TamperKind | null} kind */
+    setTamper(kind) {
+      tamper = kind;
+      view.setTamper(kind);
+      renderDetail();
     },
     /** One more event today. */
     countEvent() {

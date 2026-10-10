@@ -400,6 +400,7 @@ export default {
             person_at: null,
             snapshot_at: null,
             alert: true,
+            kind: message.data.kind ?? "motion",
             missed: message.replay,
           });
           return;
@@ -413,6 +414,7 @@ export default {
               interrupted: false,
               person_at: null,
               snapshot_at: null,
+              kind: message.data.kind ?? "motion",
               missed: message.replay,
             }),
             id,

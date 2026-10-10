@@ -2,6 +2,8 @@
 // encoded as a JPEG, with the hub's recorded detections for that moment in the part's
 // X-Detections header. The dashboard's player can't tell it from the hub's.
 
+import { coveredPicture } from "./cameras.js";
+
 /** @typedef {import("./cameras.js").Camera} Camera */
 
 const BOUNDARY = "frame";
@@ -37,7 +39,8 @@ export function streamResponse(camera, { fps = DEFAULT_FPS, signal }) {
           if (busy || camera.status !== "online" || camera.video.readyState < 2) return;
           busy = true;
           try {
-            context?.drawImage(camera.video, 0, 0, canvas.width, canvas.height);
+            if (camera.covered) coveredPicture(context, camera.video, canvas.width, canvas.height);
+            else context?.drawImage(camera.video, 0, 0, canvas.width, canvas.height);
             const detections = camera.detections();
             const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: QUALITY });
             const jpeg = new Uint8Array(await blob.arrayBuffer());

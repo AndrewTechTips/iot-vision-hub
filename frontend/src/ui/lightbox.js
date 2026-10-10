@@ -7,6 +7,7 @@ import { snapshotUrl } from "../api/events.js";
 import { deviceName } from "../state/devices.js";
 import { boxesShown, showBoxes } from "./boxes.js";
 import { clipMoments, clipTime } from "./clip-moments.js";
+import { TAMPER, tamperOf } from "./tamper.js";
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
 import { enter, exit } from "./motion.js";
@@ -112,6 +113,9 @@ export function openLightbox({ items, index, refresh, onClose }) {
         ? `up to ${Math.round(event.peak_area_ratio * 100)} % of the frame`
         : null,
       event.person ? "a person was seen" : event.person === false ? "nobody seen" : null,
+      tamperOf(event.kind)
+        ? `the camera was ${TAMPER[/** @type {import("./tamper.js").TamperKind} */ (event.kind)].done}`
+        : null,
     ]
       .filter(Boolean)
       .join(", ");

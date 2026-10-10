@@ -158,8 +158,50 @@ export function detectionForm({ config: initial, onChange, disabled = false }) {
     return { element, render };
   }
 
+  /** Covered, blurred or moved: on unless the room's light going off would look the same. */
+  function tamperSwitch() {
+    const input = h("input", {
+      class: "switch",
+      attrs: {
+        type: "checkbox",
+        role: "switch",
+        id: "detect-tamper",
+        "aria-describedby": "detect-tamper-hint",
+        disabled,
+      },
+    });
+    const element = h(
+      "div",
+      { class: "field" },
+      h(
+        "label",
+        {
+          class: "flex cursor-pointer items-center justify-between gap-3",
+          attrs: { for: "detect-tamper" },
+        },
+        h("span", { class: "label mb-0", text: "Tamper alerts" }),
+        input,
+      ),
+      h("p", {
+        class: "hint",
+        attrs: { id: "detect-tamper-hint" },
+        text: "Alerts at once if the camera is covered, knocked out of focus or turned away. Turn it off for a room whose only light gets switched off: that looks covered too.",
+      }),
+    );
+    function render() {
+      input.checked = config.tamper_alerts ?? true;
+    }
+    input.addEventListener("change", () => {
+      config = { ...config, tamper_alerts: input.checked };
+      onChange({ ...config });
+    });
+    render();
+    return { element, render };
+  }
+
   const controls = [
     alertChoice(),
+    tamperSwitch(),
     slider({
       id: "detect-sensitivity",
       label: "Sensitivity",

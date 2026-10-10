@@ -17,6 +17,7 @@ import { icon } from "../ui/icons.js";
 import { liveView } from "../ui/live-view.js";
 import { pageHeader } from "../ui/page.js";
 import { describeAreas, roiEditor } from "../ui/roi-editor.js";
+import { tamperOf } from "../ui/tamper.js";
 import { formatClock, formatDuration, timeAgo } from "../ui/time.js";
 import { toast } from "../ui/toast.js";
 
@@ -130,6 +131,7 @@ export default {
       );
       view.setVisible(true);
       view.setMotion(Boolean(device.last_event && !device.last_event.ended_at));
+      view.setTamper(tamperOf(device.tampering?.kind));
 
       // ── Side panels ─────────────────────────────────────
       const facts = h("dl", { class: "device-facts" });
@@ -457,6 +459,10 @@ export default {
             };
             view.setStatus(message.data.status);
             renderDevice();
+          } else if (message.type === "motion.started" && tamperOf(message.data.kind)) {
+            view.setTamper(tamperOf(message.data.kind));
+          } else if (message.type === "motion.ended" && tamperOf(message.data.kind)) {
+            view.setTamper(null);
           } else if (message.type === "motion.started") {
             view.setMotion(true);
           } else if (message.type === "motion.ended") {

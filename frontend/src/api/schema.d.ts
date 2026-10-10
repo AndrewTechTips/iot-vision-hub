@@ -744,6 +744,11 @@ export interface components {
              * @enum {string}
              */
             alert_on: "motion" | "person";
+            /**
+             * Tamper Alerts
+             * @default true
+             */
+            tamper_alerts: boolean;
         };
         /** DeviceCreate */
         DeviceCreate: {
@@ -793,6 +798,8 @@ export interface components {
             /** @description Latest live frame, if the camera produced one */
             stream: components["schemas"]["StreamInfo"] | null;
             last_event: components["schemas"]["LastEvent"] | null;
+            /** @description Set while the camera is covered, out of focus or turned away */
+            tampering: components["schemas"]["TamperOut"] | null;
         };
         /**
          * DeviceStatus
@@ -815,12 +822,20 @@ export interface components {
             source?: components["schemas"]["SourceConfig-Input"] | null;
             detection?: components["schemas"]["DetectionConfig"] | null;
         };
+        /**
+         * EventKind
+         * @description What an event is: motion, or the camera being tampered with (vision/tamper.py).
+         * @enum {string}
+         */
+        EventKind: "motion" | "covered" | "blurred" | "moved";
         /** EventOut */
         EventOut: {
             /** Id */
             id: string;
             /** Device Id */
             device_id: string;
+            /** @description "motion", or the camera being tampered with: "covered", "blurred", "moved" */
+            kind: components["schemas"]["EventKind"];
             /**
              * Started At
              * Format: date-time
@@ -1219,6 +1234,18 @@ export interface components {
              */
             seed?: number | null;
         };
+        /** TamperOut */
+        TamperOut: {
+            /** Event Id */
+            event_id: string;
+            /** @description "covered", "blurred" or "moved" */
+            kind: components["schemas"]["EventKind"];
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
+        };
         /** TicketOut */
         TicketOut: {
             /**
@@ -1361,6 +1388,11 @@ export interface components {
              * Format: date-time
              */
             started_at: string;
+            /**
+             * @description "motion", or the camera being tampered with: "covered", "blurred", "moved"
+             * @default motion
+             */
+            kind: components["schemas"]["EventKind"];
             /** Ended At */
             ended_at: string | null;
             /** Peak Area Ratio */
@@ -1414,6 +1446,11 @@ export interface components {
              * Format: date-time
              */
             started_at: string;
+            /**
+             * @description "motion", or the camera being tampered with: "covered", "blurred", "moved"
+             * @default motion
+             */
+            kind: components["schemas"]["EventKind"];
         };
         /** MotionStartedMessage */
         MotionStartedMessage: {

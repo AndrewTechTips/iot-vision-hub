@@ -10,6 +10,7 @@
 import { streamUrl } from "../api/devices.js";
 import { createPlayer } from "../realtime/mjpeg.js";
 import { detectionOverlay } from "./detection-overlay.js";
+import { TAMPER } from "./tamper.js";
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
 
@@ -81,6 +82,13 @@ export function liveView({ device: initial, host, fps, onFrameSize }) {
     h("span", { class: "dot", attrs: { "aria-hidden": "true", "data-pulse": "" } }),
     motionLabel,
   );
+  const tamperLabel = h("span");
+  const tamperChip = h(
+    "span",
+    { class: "camera-chip camera-tamper panel-solid", attrs: { "data-tone": "alarm" } },
+    h("span", { class: "dot", attrs: { "aria-hidden": "true", "data-pulse": "" } }),
+    tamperLabel,
+  );
   const overlay = detectionOverlay();
   const element = h(
     "div",
@@ -91,6 +99,7 @@ export function liveView({ device: initial, host, fps, onFrameSize }) {
     placeholder,
     chip,
     motionChip,
+    tamperChip,
   );
 
   /** @param {number | null} score the open event's person score, once it found one */
@@ -203,6 +212,14 @@ export function liveView({ device: initial, host, fps, onFrameSize }) {
       motion = active;
       if (!active && !seeing) showPerson(null);
       render();
+    },
+    /**
+     * Covered, blurred or moved (null: fine). Takes the motion chip's place, in red.
+     * @param {import("./tamper.js").TamperKind | null} kind
+     */
+    setTamper(kind) {
+      host.toggleAttribute("data-tamper", Boolean(kind));
+      tamperLabel.textContent = kind ? TAMPER[kind].chip : "";
     },
     /** @param {boolean} onScreen */
     setVisible(onScreen) {

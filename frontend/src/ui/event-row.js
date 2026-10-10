@@ -4,6 +4,7 @@ import { snapshotUrl } from "../api/events.js";
 import { deviceName } from "../state/devices.js";
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
+import { TAMPER, tamperOf } from "./tamper.js";
 import { formatClock, formatDuration, timeAgo } from "./time.js";
 
 /** @typedef {import("../api/types.js").MotionEvent} MotionEvent */
@@ -98,6 +99,13 @@ export function eventRow(initial, { onOpen } = {}) {
         !event.complete && !event.interrupted && tag("sodium", "In progress", true),
         event.interrupted &&
           tag("alarm", "Interrupted", false, "The hub stopped before this event ended."),
+        tamperOf(event.kind) &&
+          tag(
+            "alarm",
+            TAMPER[/** @type {import("./tamper.js").TamperKind} */ (event.kind)].chip,
+            false,
+            "The camera was tampered with.",
+          ),
         event.person && tag("signal", "Person", false, personTitle(event)),
         event.missed && tag("iris", "Missed", false, "Happened while this page was offline."),
       ].filter((item) => item instanceof HTMLElement),
@@ -106,6 +114,17 @@ export function eventRow(initial, { onOpen } = {}) {
   }
 
   function renderFacts() {
+    const tamper = tamperOf(event.kind);
+    if (tamper) {
+      const done = TAMPER[tamper].done;
+      facts.textContent =
+        event.complete && event.duration_seconds !== null
+          ? `Camera ${done} for ${formatDuration(event.duration_seconds)}`
+          : event.interrupted
+            ? `Camera ${done}`
+            : `Camera ${done} now`;
+      return;
+    }
     const lines = [];
     if (event.complete && event.duration_seconds !== null) {
       lines.push(`Lasted ${formatDuration(event.duration_seconds)}`);
