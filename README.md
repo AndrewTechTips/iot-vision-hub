@@ -125,7 +125,11 @@ They run anywhere, no hardware needed.</sub>
 
 ### History
 - **Every event kept** with its clean frame, annotated frame, thumbnail and a short WebM clip
-  that starts before the detection. Download any of them as evidence.
+  that starts before the detection. Download any of them as evidence. The clip viewer jumps
+  straight to its moments: the motion, the person found, the frame with the most motion.
+- **Patterns:** each camera shows when it sees motion (or people) over four weeks, as a
+  weekday-by-hour heatmap in your time zone, and every tile a sparkline of its week. The
+  database does the counting; the browser gets hourly totals, never the events.
 - **Filter** by camera, time and "people only". Old events are deleted on a per-camera schedule.
 - **Audit log** of who changed which camera or account, and when.
 
@@ -282,6 +286,7 @@ is on the Home Screen.
 | `GET /api/v1/devices/{id}/snapshot` | Latest frame as JPEG | logged in |
 | `GET /api/v1/devices/{id}/stream` | MJPEG live stream | logged in (bearer or ticket) |
 | `GET /api/v1/events` · `/events/{id}` | Event history (filter by camera, time and `person`) | logged in |
+| `GET /api/v1/events/activity` | Events per camera and hour, counted by the database | logged in |
 | `GET /api/v1/events/{id}/snapshot?kind=` | Event image: `annotated`, `clean` or `thumbnail` | bearer or signed link |
 | `GET /api/v1/events/{id}/clip` | Event video (WebM), with byte ranges for seeking | bearer or signed link |
 | `GET /api/v1/audit` | Who changed which device or user, and when | admin |

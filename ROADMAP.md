@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 7 — Showcase (Phases 1–6 are complete: MVP, event clips, person detection)
 - **Working branch:** `main`
-- **Next task:** 7.3 Richer history (7.4, the public demo, is done)
+- **Next task:** 7.5 Smarter detection, or 7.6 (both optional: pick what is worth it)
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -434,9 +434,12 @@ dashboard, richer history, and a public demo anyone can open. Designs: AD-23, AD
   - **Found while taking them:** a camera page opened in the middle of an event showed red boxes but no motion chip, because the hub reports an event only once it ends. The live view now also counts motion from frames that carry detections
 
 ### 7.3 Richer history
-- [ ] Activity heatmap (hour × weekday) per camera, from an aggregate endpoint (no rows shipped to the browser)
-- [ ] Clip timeline with markers (motion start, person found) so the viewer can jump to the moment
-- [ ] Events-per-day sparkline on each live tile
+- [x] `GET /events/activity`: events per camera and hour (with people and alerts) counted by the database, through a small `epoch_hour` SQL construct compiled for PostgreSQL and SQLite; hours come back as UTC instants and the dashboard folds them into the viewer's time zone (DST-safe). Checked on both databases
+- [x] Camera page: "When it sees motion", a weekday × hour heatmap over four weeks, any motion or people, shaded on a square-root scale (one unusual hour doesn't wash out the pattern), with a sentence for screen readers
+- [x] Clip moments (migration 0007: `person_at`, `snapshot_at`, `clip_started_at`): the viewer's "Jump to" buttons for the motion, the person found and the frame with the most motion. Older events simply have none
+  - **Found by the type check:** the demo hub and the live event list built events without the new fields; `tsc` flagged both before anything ran
+- [x] Week sparkline and total on each live tile, kept current by live events and recounted every half hour
+- [x] The demo shows all three: its hub answers the activity endpoint with a steady made-up pattern per camera (replaying the loops would put someone at the door every half minute), and its recording carries the moments
 
 ### 7.4 Public demo (GitHub Pages)
 - [x] Repository renamed to `iot-vision-hub`; badges, links and the git remote updated
