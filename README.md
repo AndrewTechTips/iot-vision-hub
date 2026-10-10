@@ -115,6 +115,9 @@ They run anywhere, no hardware needed.</sub>
   picture, and one event per visit instead of one per flicker.
 - **People, not shadows:** each event is checked with a person detector (YOLOX-s, running
   locally). A camera can alert on any motion or on people only.
+- **Tamper alerts:** a camera covered, knocked out of focus or turned away alerts at once, in
+  red, until it sees normally again. Measured against what the camera usually sees, adapting
+  with the daylight, so dusk raises nothing (0.1 ms a check).
 
 ### Alerts
 - **On your phone:** web push notifications with the snapshot, also when the dashboard is

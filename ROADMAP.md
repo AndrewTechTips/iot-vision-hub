@@ -18,7 +18,7 @@
 
 - **Active phase:** Phase 7 — Showcase (Phases 1–6 are complete: MVP, event clips, person detection)
 - **Working branch:** `main`
-- **Next task:** 7.5 Smarter detection, or 7.6 (both optional: pick what is worth it)
+- **Next task:** the rest of 7.5 (tracking and zone rules) or 7.6 (both optional)
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
@@ -53,6 +53,7 @@
 | AD-23 | Live overlays | The hub sends **detections as data** and the **dashboard draws them** over the video. They ride in each MJPEG part's `X-Detections` header (boxes as fractions of the picture, plus the person score once the open event found one), so the JPEG stays clean. Snapshots and clips are unchanged | A header ties the boxes to the exact frame: a separate WebSocket message would arrive early or late and the boxes would trail the person. Styled boxes (motion vs person) that can be switched off, with no re-encoding. An `<img>` ignores the header, so plain MJPEG clients keep working. One code path for the live view and the public demo |
 | AD-24 | Public demo | **GitHub Pages** hosts the real dashboard, unchanged, built in a **demo mode** that adds a hub living in the tab: it replaces `fetch` and `WebSocket` for `/api/v1` and answers the API, the realtime protocol and the MJPEG streams (frames drawn from looping videos, with the detections recorded for that moment). Its data is recorded from the real camera worker (`vision-hub export-demo`) and its responses are typed against the OpenAPI schema. Served under the repository path, deep links through `404.html` | Pages only serves static files. Visitors try the actual app in seconds, with no server to run or pay for. Faking the network rather than the app keeps the demo honest: every view, the router and the realtime client run as in production, and the type check catches drift from the API |
 | AD-25 | Demo footage | Four free Pexels clips, **fetched from Pexels at run time** (pinned URLs and SHA-256, `vision-hub demo-footage`) and turned into camera loops on the machine: trimmed, 640 px 16:9 at 15 fps, a crossfade from the last frame to the first, then the empty scene played back and forth. VP8 WebM written by OpenCV | Real people make person detection visible (YOLOX scores the synthetic figure 0.0). Fetching instead of re-hosting keeps the repository small and stays well inside the Pexels licence. A hard cut at the loop point would look like motion; the crossfade and idle scene give one event per visit. No new dependency |
+| AD-26 | Tamper detection | A `TamperMonitor` per camera, in the camera thread, 2 checks a second on a 160 px copy: **covered** (contrast collapses), **blurred** (detail relative to contrast drops), **moved** (edge correlation with the usual view drops; a view turned for 5 min becomes the new usual). Suspicions must last 8 s, recovery 4 s; the usual view adapts over ~10 min. A tamper incident is an **event of its kind** (`kind` on `motion_events`), stored with its picture and alerted **at its start** through the outbox, past the motion cooldown | Reusing events gives tamper alerts history, snapshots, WebSocket replay and the outbox's at-least-once delivery for free. Relative measures keep dusk quiet; the hold time keeps someone walking past the lens quiet. A room whose only light goes off looks covered, so cameras can turn tamper alerts off |
 
 ---
 
@@ -451,7 +452,9 @@ dashboard, richer history, and a public demo anyone can open. Designs: AD-23, AD
 - [x] e2e and accessibility checks against the demo build (`npm run e2e:demo`, desktop and phone): no request reaches a server, a person alert opens its clip, boxes on the camera page, filters and deep links, in-memory controls
 
 ### 7.5 Smarter detection *(pick what is worth it)*
-- [ ] Tamper detection: covered, moved or blurred camera raises its own alert (brightness, sharpness, background shift)
+- [x] Tamper detection (AD-26): covered, blurred or moved cameras raise a tamper event at once (migration 0008: `kind`), with its picture, through the outbox (email "Camera covered: …", push "… camera covered"), the WebSocket (as an event of its kind) and the dashboard (a red ring and chip on the camera, a red toast until it is back, a "Covered" tag in the history). Per-camera "Tamper alerts" switch. Cost and accuracy in `docs/performance.md`
+  - **Found by testing on real footage:** sharpness scales with the square of brightness, so a fading dusk read as "blurred", and a dark smudged hand fell between "too uniform" and "too dark to judge". Detail is now measured relative to contrast and covering by the contrast collapsing; all 12 spoils (3 kinds × 4 scenes) are caught, with no false alarm
+  - The demo covers its patio camera a minute in, then every four minutes (`?tamper` starts at once)
 - [ ] Object tracking (IoU matching, numpy only) and zone rules: someone staying in a zone for N seconds, crossing a line
 
 ### 7.6 Integrations & deployment *(pick what is worth it)*

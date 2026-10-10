@@ -170,6 +170,21 @@ small CPUs). That decided the design:
 - **Privacy:** onnxruntime 1.30's Linux build includes telemetry with HTTPS uploads. The hub
   sets `ORT_DISABLE_TELEMETRY=1` before the library loads, and the image sets it too.
 
+## Tamper detection
+
+Two checks a second per camera, on a 160 px grayscale copy (`vision/tamper.py`): contrast,
+detail relative to contrast, and the correlation of the scene's edges with the usual view.
+
+| Frame | One check | At 2 checks a second |
+|---|---|---|
+| 640 × 360 | 0.12 ms | 0.02 % of a core |
+| 1920 × 1080 | 0.70 ms | 0.14 % of a core |
+
+Checked on the demo footage, each scene looped three times with a stretch spoiled in the middle:
+no false alarm in any loop, and a hand over the lens, a smeared lens and a camera turned over are
+each caught on all four scenes, 8 s after they start (the hold time) and cleared 4 s after the
+view returns. A synthetic 40-minute dusk raises nothing: the usual view adapts over ~10 minutes.
+
 ## Dashboard
 
 Lighthouse 12, mobile (Moto G Power viewport, 4G at 562 ms RTT and 1.6 Mbps, 4× CPU slowdown),
