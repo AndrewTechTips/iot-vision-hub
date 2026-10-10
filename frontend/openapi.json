@@ -1556,6 +1556,128 @@
         }
       }
     },
+    "/api/v1/events/activity": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Event counts per hour",
+        "description": "How many events each camera started per hour, with how many had a person and how many\nalerted: counted by the database, for heatmaps and sparklines. Hours are UTC instants, so a\nclient can fold them into its own time zone. At most 92 days at once.",
+        "operationId": "events_activity",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 63
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Device Id"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/UtcDateTime"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Started at or after (UTC); default 28 days ago",
+              "title": "Since"
+            },
+            "description": "Started at or after (UTC); default 28 days ago"
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/UtcDateTime"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Started before (UTC); default now",
+              "title": "Until"
+            },
+            "description": "Started before (UTC); default now"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "description": "Validation Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/events/{event_id}": {
       "get": {
         "tags": [
@@ -2443,6 +2565,72 @@
   },
   "components": {
     "schemas": {
+      "ActivityBucketOut": {
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "title": "Device Id"
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start",
+            "description": "The hour (UTC) these events started in"
+          },
+          "events": {
+            "type": "integer",
+            "title": "Events"
+          },
+          "people": {
+            "type": "integer",
+            "title": "People",
+            "description": "Events with a person seen"
+          },
+          "alerts": {
+            "type": "integer",
+            "title": "Alerts",
+            "description": "Events that raised an alert"
+          }
+        },
+        "type": "object",
+        "required": [
+          "device_id",
+          "start",
+          "events",
+          "people",
+          "alerts"
+        ],
+        "title": "ActivityBucketOut"
+      },
+      "ActivityOut": {
+        "properties": {
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Since"
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Until"
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityBucketOut"
+            },
+            "type": "array",
+            "title": "Buckets",
+            "description": "Per camera and hour, oldest first; hours without events are left out"
+          }
+        },
+        "type": "object",
+        "required": [
+          "since",
+          "until",
+          "buckets"
+        ],
+        "title": "ActivityOut"
+      },
       "AuditEntryOut": {
         "properties": {
           "id": {
@@ -2633,13 +2821,27 @@
           "size_bytes": {
             "type": "integer",
             "title": "Size Bytes"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At",
+            "description": "When the clip's first frame was captured (its 0:00); null for older events"
           }
         },
         "type": "object",
         "required": [
           "url",
           "content_type",
-          "size_bytes"
+          "size_bytes",
+          "started_at"
         ],
         "title": "ClipLink"
       },
@@ -3069,6 +3271,32 @@
             "title": "Person Confidence",
             "description": "Best person score of the checks"
           },
+          "person_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person At",
+            "description": "When the frame a person was found on was captured; null without a person"
+          },
+          "snapshot_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot At",
+            "description": "When the snapshot's frame, the one with the most motion, was captured"
+          },
           "alert": {
             "type": "boolean",
             "title": "Alert",
@@ -3113,6 +3341,8 @@
           "motion_frames",
           "person",
           "person_confidence",
+          "person_at",
+          "snapshot_at",
           "alert",
           "boxes",
           "snapshots",

@@ -31,6 +31,8 @@
 /** @typedef {Schemas["SnapshotLink"]} SnapshotLink */
 /** @typedef {Schemas["ClipLink"]} ClipLink */
 /** @typedef {Schemas["Page_EventOut_"]} EventPage */
+/** @typedef {Schemas["ActivityOut"]} Activity */
+/** @typedef {Schemas["ActivityBucketOut"]} ActivityBucket */
 /** @typedef {Schemas["AuditEntryOut"]} AuditEntry */
 /** @typedef {Schemas["Page_AuditEntryOut_"]} AuditPage */
 

@@ -1,9 +1,9 @@
 // Activity: who changed which camera or account, and when (admins only). The hub records
 // field names, never values, so entries say what changed, not what it changed to.
 
-import { href } from "../paths.js";
 import { api } from "../api/client.js";
 import { ApiError, describeError } from "../api/errors.js";
+import { href } from "../paths.js";
 import { session } from "../state/auth.js";
 import { deviceName, devices } from "../state/devices.js";
 import { h } from "../ui/dom.js";

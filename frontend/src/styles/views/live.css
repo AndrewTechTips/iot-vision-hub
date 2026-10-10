@@ -177,7 +177,22 @@
   }
 
   .camera-meta {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 0.75rem;
     padding: 0.875rem 1rem 1rem;
+  }
+
+  /* This week's events: a sparkline, then the total. */
+  .camera-week {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--color-haze);
+    font-variant-numeric: tabular-nums;
   }
 
   /* The name links to the camera; its hit area covers the whole tile. */

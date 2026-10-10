@@ -2,13 +2,14 @@
 // motion. Admins also start and stop it, test its connection and tune detection: sensitivity
 // and the areas of the picture it watches. Saved settings reload the running camera.
 
-import { href } from "../paths.js";
 import { api } from "../api/client.js";
 import { describeError } from "../api/errors.js";
-import { listEvents, snapshotUrl } from "../api/events.js";
+import { getActivity, listEvents, snapshotUrl } from "../api/events.js";
+import { href } from "../paths.js";
 import { realtime } from "../realtime/live.js";
 import { session } from "../state/auth.js";
 import { devices as directory, rememberDevice } from "../state/devices.js";
+import { weekHeatmap } from "../ui/activity-chart.js";
 import { boxesShown, onBoxesChange, showBoxes } from "../ui/boxes.js";
 import { detectionForm } from "../ui/detection-form.js";
 import { h } from "../ui/dom.js";
@@ -25,6 +26,9 @@ import { toast } from "../ui/toast.js";
 /** @typedef {import("../api/types.js").MotionEvent} MotionEvent */
 
 const RECENT = 6;
+
+/** Weeks of history behind the camera's heatmap. */
+const PATTERN_WEEKS = 4;
 
 /** @type {import("../router.js").View} */
 export default {
@@ -204,6 +208,19 @@ export default {
           recent,
         ),
       );
+      const patterns = weekHeatmap({ id: "device-patterns", weeks: PATTERN_WEEKS });
+      side.append(
+        h(
+          "section",
+          { class: "card p-5", attrs: { "aria-labelledby": "device-patterns-title" } },
+          h("h2", {
+            class: "device-section-title",
+            attrs: { id: "device-patterns-title" },
+            text: "When it sees motion",
+          }),
+          patterns.element,
+        ),
+      );
 
       outlet.replaceChildren(backLink(), header, h("div", { class: "device-layout" }, stage, side));
 
@@ -250,7 +267,23 @@ export default {
         areasText.textContent = describeAreas(draft.roi);
       }
 
-      // ── Recent events ───────────────────────────────────
+      // ── Recent events and patterns ──────────────────────
+
+      async function loadPatterns() {
+        try {
+          const until = new Date();
+          const since = new Date(until.getTime() - PATTERN_WEEKS * 7 * 86_400_000);
+          const activity = await getActivity({
+            deviceId: id,
+            since,
+            until,
+            signal: controller.signal,
+          });
+          patterns.update(activity.buckets);
+        } catch {
+          // a chart is a bonus: the page works without it
+        }
+      }
 
       async function loadRecent() {
         try {
@@ -430,7 +463,10 @@ export default {
             view.setMotion(false);
             // The snapshot is stored with the end: list it a moment later.
             clearTimeout(refreshRecent);
-            refreshRecent = setTimeout(loadRecent, 500);
+            refreshRecent = setTimeout(() => {
+              loadRecent();
+              loadPatterns();
+            }, 500);
           }
         }),
         () => clearTimeout(refreshRecent),
@@ -462,6 +498,7 @@ export default {
       renderDevice();
       renderDraft();
       loadRecent();
+      loadPatterns();
     }
 
     return () => cleanups.forEach((cleanup) => cleanup());

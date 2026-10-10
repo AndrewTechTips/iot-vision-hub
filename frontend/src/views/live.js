@@ -1,8 +1,10 @@
 // Live: every camera, with its video and status, updated by live events.
 
 import { describeError } from "../api/errors.js";
+import { getActivity } from "../api/events.js";
 import { realtime } from "../realtime/live.js";
 import { devices as directory, loadDevices } from "../state/devices.js";
+import { foldDays } from "../ui/activity-chart.js";
 import { cameraTile } from "../ui/camera-tile.js";
 import { h } from "../ui/dom.js";
 import { icon } from "../ui/icons.js";
@@ -11,6 +13,9 @@ import { pageHeader } from "../ui/page.js";
 
 /** @typedef {import("../api/types.js").Device} Device */
 /** @typedef {ReturnType<typeof cameraTile>} Tile */
+
+/** Days in a tile's sparkline, today included. */
+const WEEK_DAYS = 7;
 
 /** @type {import("../router.js").View} */
 export default {
@@ -40,8 +45,36 @@ export default {
       { rootMargin: "200px 0px" },
     );
 
+    /** @type {Map<string, number[]> | null} events per day this week per camera, once known */
+    let week = null;
+
     showSkeletons();
     load();
+    loadWeek();
+
+    /** Each tile's last seven days, counted by the hub. A bonus: tiles work without it. */
+    async function loadWeek() {
+      try {
+        const until = new Date();
+        const since = new Date(
+          until.getFullYear(),
+          until.getMonth(),
+          until.getDate() - (WEEK_DAYS - 1),
+        );
+        const { buckets } = await getActivity({ since, until, signal: controller.signal });
+        week = new Map();
+        for (const id of new Set([...tiles.keys(), ...buckets.map((b) => b.device_id)])) {
+          const counts = foldDays(
+            buckets.filter((b) => b.device_id === id),
+            WEEK_DAYS,
+          );
+          week.set(id, counts);
+          tiles.get(id)?.setWeek(counts);
+        }
+      } catch {
+        // no sparklines this time
+      }
+    }
 
     async function load() {
       try {
@@ -82,6 +115,7 @@ export default {
           return existing.element;
         }
         const tile = cameraTile(device);
+        if (week) tile.setWeek(week.get(device.id) ?? Array.from({ length: WEEK_DAYS }, () => 0));
         tile.element.dataset.device = device.id;
         tiles.set(device.id, tile);
         observer.observe(tile.element);
@@ -170,6 +204,7 @@ export default {
           return;
         case "motion.ended":
           tile?.setMotion(false, message.data.ended_at ?? message.data.started_at);
+          if (!message.replay) tile?.countEvent();
           return;
       }
     });
@@ -177,13 +212,18 @@ export default {
     // Status changes are not replayed after a reconnect: reload the list to catch up.
     let realtimeStatus = realtime.state.get().status;
     const stopWatching = realtime.state.subscribe(({ status }) => {
-      if (status === "live" && realtimeStatus !== "live" && loaded) load();
+      if (status === "live" && realtimeStatus !== "live" && loaded) {
+        load();
+        loadWeek();
+      }
       realtimeStatus = status;
     });
 
     const onVisibility = () => tiles.forEach((tile) => tile.sync());
     document.addEventListener("visibilitychange", onVisibility);
     const ticker = window.setInterval(() => tiles.forEach((tile) => tile.tick()), 30_000);
+    // A new day starts a new bar: recount now and then rather than tracking midnight.
+    const recount = window.setInterval(loadWeek, 30 * 60_000);
 
     return () => {
       controller.abort();
@@ -191,6 +231,7 @@ export default {
       stopWatching();
       document.removeEventListener("visibilitychange", onVisibility);
       window.clearInterval(ticker);
+      window.clearInterval(recount);
       observer.disconnect();
       clearTiles();
     };

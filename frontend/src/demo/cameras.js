@@ -157,6 +157,8 @@ export class Camera {
  */
 export function eventOut(deviceId, id, started, recorded, ended) {
   const { snapshots, clip } = recorded;
+  /** A moment of the recorded event, at the same distance from its start. @param {number} at */
+  const moment = (at) => new Date(started.getTime() + (at - recorded.start) * 1000).toISOString();
   return {
     id,
     device_id: deviceId,
@@ -169,6 +171,8 @@ export function eventOut(deviceId, id, started, recorded, ended) {
     motion_frames: recorded.motion_frames,
     person: recorded.person,
     person_confidence: recorded.person_confidence,
+    person_at: recorded.person_at === null ? null : moment(recorded.person_at),
+    snapshot_at: moment(recorded.snapshot_at),
     alert: recorded.alert,
     boxes: recorded.boxes,
     snapshots: /** @type {const} */ (["clean", "annotated", "thumbnail"]).map((kind) => ({
@@ -177,7 +181,12 @@ export function eventOut(deviceId, id, started, recorded, ended) {
       size_bytes: snapshots[kind].size_bytes,
     })),
     clip: clip
-      ? { url: RECORDING_DIR + clip.path, content_type: "video/webm", size_bytes: clip.size_bytes }
+      ? {
+          url: RECORDING_DIR + clip.path,
+          content_type: "video/webm",
+          size_bytes: clip.size_bytes,
+          started_at: clip.started_at === null ? null : moment(clip.started_at),
+        }
       : null,
   };
 }

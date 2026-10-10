@@ -1,11 +1,12 @@
 // Event viewer: a modal dialog with the event's picture (with or without the motion boxes) or
-// its clip. Browse with the arrows, the arrow keys or a swipe. Escape closes it and focus
+// its clip, with buttons that jump to its moments (the motion, the person, the most motion). Browse with the arrows, the arrow keys or a swipe. Escape closes it and focus
 // returns to where it was. Signed links expire, so a broken image or clip fetches fresh links
 // once. Clips never play on their own: the snapshot is their poster until you press play.
 
 import { snapshotUrl } from "../api/events.js";
 import { deviceName } from "../state/devices.js";
 import { boxesShown, showBoxes } from "./boxes.js";
+import { clipMoments, clipTime } from "./clip-moments.js";
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
 import { enter, exit } from "./motion.js";
@@ -54,6 +55,10 @@ export function openLightbox({ items, index, refresh, onClose }) {
   const title = h("h2", { class: "font-medium", attrs: { id: "lightbox-title" } });
   const facts = h("p", { class: "text-sm text-haze" });
   const position = h("p", { class: "text-xs text-haze tabular-nums" });
+  const moments = h("div", {
+    class: "lightbox-moments",
+    attrs: { role: "group", "aria-label": "Jump to" },
+  });
   const boxesSwitch = h("input", {
     class: "switch",
     attrs: { type: "checkbox", role: "switch", id: "lightbox-boxes" },
@@ -89,7 +94,7 @@ export function openLightbox({ items, index, refresh, onClose }) {
     h(
       "div",
       { class: "lightbox-bar panel-solid" },
-      h("div", { class: "lightbox-about" }, title, facts, position),
+      h("div", { class: "lightbox-about" }, title, facts, moments, position),
       h("div", { class: "flex flex-wrap items-center gap-3" }, modes, boxesLabel, download, close),
     ),
   );
@@ -120,6 +125,7 @@ export function openLightbox({ items, index, refresh, onClose }) {
     for (const input of modes.querySelectorAll("input")) input.checked = input.value === showing;
     boxesLabel.hidden = showing === "clip";
     if (clip && showing === "clip") return showClip(event, clip, camera);
+    moments.replaceChildren();
     hideClip();
 
     const original = snapshotUrl(event, "clean");
@@ -159,6 +165,30 @@ export function openLightbox({ items, index, refresh, onClose }) {
       video.src = clip.url;
     }
     setDownload(clip.url, fileName(event, "webm"), "Download clip");
+    moments.replaceChildren(
+      ...clipMoments(event).map(({ kind, label, seconds }) =>
+        h(
+          "button",
+          {
+            class: "lightbox-moment",
+            data: { kind },
+            attrs: {
+              type: "button",
+              "aria-label": `${label}, ${clipTime(seconds)} into the clip`,
+            },
+            on: {
+              click: () => {
+                video.currentTime = seconds;
+                video.play().catch(() => {});
+              },
+            },
+          },
+          h("span", { class: "dot", attrs: { "aria-hidden": "true" } }),
+          label,
+          h("span", { class: "tabular-nums text-haze", text: clipTime(seconds) }),
+        ),
+      ),
+    );
   }
 
   /** Stops a clip and lets go of it (no more downloading in the background). */

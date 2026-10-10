@@ -13,14 +13,15 @@
  *   motion_frames: number,
  *   person: boolean | null,
  *   person_confidence: number | null,
+ *   person_at: number | null,
  *   alert: boolean,
  *   boxes: { x: number, y: number, width: number, height: number }[],
  *   snapshot_at: number,
  *   snapshots: { clean: RecordedFile, annotated: RecordedFile, thumbnail: RecordedFile },
- *   clip: RecordedFile | null,
+ *   clip: (RecordedFile & { started_at: number | null }) | null,
  * }} RecordedEvent
- * start, end, snapshot_at: seconds into the loop. `end` may pass the loop's end: the event
- * then ends early in the next pass.
+ * Every moment (start, end, snapshot_at, person_at, the clip's started_at) is in seconds into
+ * the loop. `end` may pass the loop's end: the event then ends early in the next pass.
  * @typedef {{
  *   id: string,
  *   name: string,

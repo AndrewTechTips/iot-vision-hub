@@ -48,6 +48,16 @@ test("a person at the front door raises an alert that opens the event", async ({
   await expect(viewer).toContainText("a person was seen");
   const clip = await viewer.locator("video").getAttribute("src");
   expect(clip).toMatch(/\/iot-vision-hub\/demo\/front-door\/event-\d+\.webm$/);
+
+  // The clip's moments jump the player: the person was found just after the motion began.
+  const moments = viewer.getByRole("group", { name: "Jump to" });
+  await expect(moments.getByRole("button")).toHaveText([/^Motion/, /^Person/, /^Most motion/]);
+  await moments.getByRole("button", { name: /^Person/ }).click();
+  const at = await viewer
+    .locator("video")
+    .evaluate((video) => /** @type {HTMLVideoElement} */ (video).currentTime);
+  expect(at).toBeGreaterThan(2);
+  expect(at).toBeLessThan(4.5);
 });
 
 test("the camera page draws the person's box from the recording", async ({ page }) => {

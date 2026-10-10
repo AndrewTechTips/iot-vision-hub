@@ -329,6 +329,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/events/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Event counts per hour
+         * @description How many events each camera started per hour, with how many had a person and how many
+         *     alerted: counted by the database, for heatmaps and sparklines. Hours are UTC instants, so a
+         *     client can fold them into its own time zone. At most 92 days at once.
+         */
+        get: operations["events_activity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/events/{event_id}": {
         parameters: {
             query?: never;
@@ -522,6 +544,47 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActivityBucketOut */
+        ActivityBucketOut: {
+            /** Device Id */
+            device_id: string;
+            /**
+             * Start
+             * Format: date-time
+             * @description The hour (UTC) these events started in
+             */
+            start: string;
+            /** Events */
+            events: number;
+            /**
+             * People
+             * @description Events with a person seen
+             */
+            people: number;
+            /**
+             * Alerts
+             * @description Events that raised an alert
+             */
+            alerts: number;
+        };
+        /** ActivityOut */
+        ActivityOut: {
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
+            /**
+             * Until
+             * Format: date-time
+             */
+            until: string;
+            /**
+             * Buckets
+             * @description Per camera and hour, oldest first; hours without events are left out
+             */
+            buckets: components["schemas"]["ActivityBucketOut"][];
+        };
         /** AuditEntryOut */
         AuditEntryOut: {
             /** Id */
@@ -611,6 +674,11 @@ export interface components {
             content_type: string;
             /** Size Bytes */
             size_bytes: number;
+            /**
+             * Started At
+             * @description When the clip's first frame was captured (its 0:00); null for older events
+             */
+            started_at: string | null;
         };
         /** DetectionConfig */
         DetectionConfig: {
@@ -789,6 +857,16 @@ export interface components {
              * @description Best person score of the checks
              */
             person_confidence: number | null;
+            /**
+             * Person At
+             * @description When the frame a person was found on was captured; null without a person
+             */
+            person_at: string | null;
+            /**
+             * Snapshot At
+             * @description When the snapshot's frame, the one with the most motion, was captured
+             */
+            snapshot_at: string | null;
             /**
              * Alert
              * @description Raised an alert (false: the camera alerts on people only and none was seen)
@@ -2604,6 +2682,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_EventOut_"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    events_activity: {
+        parameters: {
+            query?: {
+                device_id?: string | null;
+                /** @description Started at or after (UTC); default 28 days ago */
+                since?: components["schemas"]["UtcDateTime"] | null;
+                /** @description Started before (UTC); default now */
+                until?: components["schemas"]["UtcDateTime"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityOut"];
                 };
             };
             /** @description Bad Request */

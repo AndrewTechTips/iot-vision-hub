@@ -27,6 +27,15 @@ export function listEvents({ deviceId, since, until, person, cursor, limit = 30,
 }
 
 /**
+ * Events per camera and hour (UTC), counted by the hub: for heatmaps and sparklines.
+ * @param {{ deviceId?: string | null, since?: Date, until?: Date, signal?: AbortSignal }} [options]
+ * @returns {Promise<import("./types.js").Activity>}
+ */
+export function getActivity({ deviceId, since, until, signal } = {}) {
+  return api.get("/events/activity", { query: { device_id: deviceId, since, until }, signal });
+}
+
+/**
  * @param {string} id
  * @param {{ signal?: AbortSignal }} [options]
  * @returns {Promise<MotionEvent>}

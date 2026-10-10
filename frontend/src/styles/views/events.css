@@ -250,6 +250,47 @@
   }
 
   /* The event's details keep a readable width; the controls wrap below them on phones. */
+  /* The clip's moments: small toned buttons that jump the player there. */
+  .lightbox-moments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin-top: 0.375rem;
+    &:empty {
+      display: none;
+    }
+  }
+  .lightbox-moment {
+    --tone: var(--color-sodium);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.1875rem 0.5rem;
+    border-radius: 9999px;
+    border: 1px solid rgb(255 255 255 / 0.1);
+    background: rgb(255 255 255 / 0.04);
+    color: var(--color-moon);
+    font-size: 0.75rem;
+    transition: background-color var(--duration-fast);
+    &:hover {
+      background: rgb(255 255 255 / 0.1);
+    }
+    &:focus-visible {
+      outline: 2px solid var(--color-iris);
+      outline-offset: 1px;
+    }
+    &[data-kind="person"] {
+      --tone: var(--color-alarm);
+    }
+    &[data-kind="peak"] {
+      --tone: var(--color-iris);
+    }
+    & .dot {
+      width: 0.4375rem;
+      height: 0.4375rem;
+    }
+  }
+
   .lightbox-about {
     flex: 1 1 15rem;
     min-width: 0;

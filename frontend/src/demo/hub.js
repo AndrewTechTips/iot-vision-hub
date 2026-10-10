@@ -5,6 +5,7 @@
 //
 // Settings changes and camera starts and stops work, in memory, until the page reloads.
 
+import { activity } from "./activity.js";
 import { Camera } from "./cameras.js";
 import { loadRecording, uuid7 } from "./recording.js";
 import { DemoSocket } from "./socket.js";
@@ -21,6 +22,7 @@ import { snapshotResponse, streamResponse } from "./stream.js";
 /** @typedef {import("../api/types.js").Ticket} Ticket */
 /** @typedef {import("../api/types.js").SourceTestResult} SourceTestResult */
 /** @typedef {import("../api/types.js").DevicePage} DevicePage */
+/** @typedef {import("../api/types.js").Activity} Activity */
 
 const API = "/api/v1";
 const USER = "visitor";
@@ -235,6 +237,24 @@ export async function startDemoHub() {
         );
       }
       return problem(405, "Method Not Allowed", "The demo can't do that.");
+    }
+    if (path === "/events/activity" && method === "GET") {
+      const until = query.get("until") ? new Date(String(query.get("until"))) : new Date();
+      const since = query.get("since")
+        ? new Date(String(query.get("since")))
+        : new Date(until.getTime() - 28 * 86_400_000);
+      const device = query.get("device_id");
+      return json(
+        /** @satisfies {Activity} */ ({
+          since: since.toISOString(),
+          until: until.toISOString(),
+          buckets: activity({
+            devices: device ? [device] : cameras.map((camera) => camera.id),
+            since,
+            until,
+          }),
+        }),
+      );
     }
     if (path === "/events" && method === "GET") {
       return json(page(events.filter(eventFilter(query)), query));

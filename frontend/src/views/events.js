@@ -397,6 +397,8 @@ export default {
             clip: null,
             person: null,
             person_confidence: null,
+            person_at: null,
+            snapshot_at: null,
             alert: true,
             missed: message.replay,
           });
@@ -405,7 +407,14 @@ export default {
           const { event_id: id, started_at, ended_at } = message.data;
           const known = rows.get(id)?.event;
           arrive({
-            ...(known ?? { snapshots: [], clip: null, interrupted: false, missed: message.replay }),
+            ...(known ?? {
+              snapshots: [],
+              clip: null,
+              interrupted: false,
+              person_at: null,
+              snapshot_at: null,
+              missed: message.replay,
+            }),
             id,
             device_id: message.device_id,
             started_at,
