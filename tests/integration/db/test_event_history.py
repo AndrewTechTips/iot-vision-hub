@@ -4,7 +4,7 @@ from pathlib import Path
 
 from sqlalchemy import func, select
 
-from vision_hub.domain.motion import BoundingBox, MotionEvent
+from vision_hub.domain.motion import BoundingBox, EventKind, MotionEvent
 from vision_hub.domain.storage import SnapshotKind, StoredSnapshot
 from vision_hub.infra.db.engine import Sessions
 from vision_hub.infra.db.models import SnapshotRow
@@ -144,6 +144,31 @@ class TestPersons:
         assert (stored["3"].person, stored["3"].person_confidence) == (None, None)
         assert [r.event.id[-1] for r in with_person] == ["1"]
         assert [r.event.id[-1] for r in without] == ["2"]  # unchecked events match neither
+
+
+class TestTamperEvents:
+    async def test_kind_is_kept_and_open_events_can_be_ended(self, sessions: Sessions) -> None:
+        repository = SqlEventRepository(sessions)
+        covered = replace(event(5), ended_at=None, kind=EventKind.COVERED)
+
+        await repository.complete(covered, [], [snapshot(SnapshotKind.CLEAN, 5)])
+        await repository.end(covered.id, T0 + timedelta(minutes=3))
+        await repository.end(covered.id, T0 + timedelta(hours=1))  # only open events end
+        record = await repository.get(covered.id)
+
+        assert record is not None
+        assert record.event.kind is EventKind.COVERED
+        assert record.event.ended_at == T0 + timedelta(minutes=3)
+        assert record.snapshots[SnapshotKind.CLEAN].path == "2026/10/01/5-clean.jpg"
+
+    async def test_tampering_is_not_activity(self, sessions: Sessions) -> None:
+        repository = SqlEventRepository(sessions)
+        await repository.complete(event(1), [], [])
+        await repository.complete(replace(event(2), kind=EventKind.MOVED), [], [])
+
+        buckets = await repository.activity(since=T0, until=T0 + timedelta(hours=1))
+
+        assert [b.events for b in buckets] == [1]
 
 
 class TestActivity:

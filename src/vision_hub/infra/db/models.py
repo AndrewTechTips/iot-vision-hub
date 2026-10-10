@@ -96,6 +96,8 @@ class MotionEventRow(Base):
     clip_started_at: Mapped[datetime | None]
     # False when the camera alerts on people only and none was seen.
     alert: Mapped[bool] = mapped_column(default=True, server_default=true())
+    # "motion", or what was done to the camera: "covered", "blurred", "moved".
+    kind: Mapped[str] = mapped_column(String(20), default="motion", server_default="motion")
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
     snapshots: Mapped[list[SnapshotRow]] = relationship(
         back_populates="event", cascade="all, delete-orphan", passive_deletes=True, lazy="selectin"

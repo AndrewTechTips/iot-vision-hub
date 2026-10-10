@@ -8,7 +8,7 @@ from sqlalchemy.sql.compiler import SQLCompiler
 from sqlalchemy.sql.functions import FunctionElement
 
 from vision_hub.domain.history import ActivityBucket, EventRecord
-from vision_hub.domain.motion import BoundingBox, MotionEvent
+from vision_hub.domain.motion import BoundingBox, EventKind, MotionEvent
 from vision_hub.domain.storage import SnapshotKind, StoredSnapshot
 from vision_hub.infra.db.engine import Sessions
 from vision_hub.infra.db.models import MotionEventRow, SnapshotRow
@@ -50,6 +50,14 @@ class SqlEventRepository:
                 SnapshotRow(kind=s.kind.value, path=s.path, size_bytes=s.size_bytes)
                 for s in snapshots
             ]
+
+    async def end(self, event_id: str, ended_at: datetime) -> None:
+        async with self._sessions.begin() as session:
+            await session.execute(
+                update(MotionEventRow)
+                .where(MotionEventRow.id == event_id, MotionEventRow.ended_at.is_(None))
+                .values(ended_at=ended_at)
+            )
 
     async def get(self, event_id: str) -> EventRecord | None:
         async with self._sessions() as session:
@@ -109,7 +117,11 @@ class SqlEventRepository:
                 func.sum(case((MotionEventRow.person.is_(True), 1), else_=0)).label("people"),
                 func.sum(case((MotionEventRow.alert.is_(True), 1), else_=0)).label("alerts"),
             )
-            .where(MotionEventRow.started_at >= since, MotionEventRow.started_at < until)
+            .where(
+                MotionEventRow.started_at >= since,
+                MotionEventRow.started_at < until,
+                MotionEventRow.kind == EventKind.MOTION.value,
+            )
             .group_by(MotionEventRow.device_id, hour)
             .order_by(hour, MotionEventRow.device_id)
         )
@@ -179,6 +191,7 @@ def _new_row(event: MotionEvent) -> MotionEventRow:
         person=event.person,
         person_confidence=event.person_confidence,
         alert=event.alert,
+        kind=event.kind.value,
         boxes=[],
         snapshots=[],
     )
@@ -197,6 +210,7 @@ def _to_record(row: MotionEventRow) -> EventRecord:
             person_confidence=row.person_confidence,
             person_at=row.person_at,
             alert=row.alert,
+            kind=EventKind(row.kind),
         ),
         boxes=tuple(BoundingBox(**box) for box in row.boxes),
         snapshots={

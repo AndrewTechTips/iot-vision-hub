@@ -13,11 +13,13 @@ from vision_hub.core.metrics import Metrics
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import (
     CameraEvent,
+    CameraRestoredEvent,
+    CameraTamperedEvent,
     DeviceStatusChanged,
     MotionEndedEvent,
     MotionStartedEvent,
 )
-from vision_hub.domain.motion import BoundingBox
+from vision_hub.domain.motion import BoundingBox, EventKind
 from vision_hub.vision.bridge import FramePacket
 from vision_hub.vision.clip import ClipRecorder, ClipSettings
 from vision_hub.vision.config import DetectionConfig
@@ -544,3 +546,75 @@ class TestFailures:
 
         assert sink.statuses()[-1] is DeviceStatus.FAILED
         assert sink.exits == [True]
+
+
+class CoveredSource:
+    """The synthetic room, covered by a hand between two read counts."""
+
+    def __init__(self, covered: range) -> None:
+        self.inner = synthetic(visit_every_seconds=60, visit_seconds=1)
+        self.covered = covered
+        self.reads = 0
+        self.name, self.fps, self.resolution = "covered", 10.0, (640, 480)
+
+    def open(self) -> None:
+        self.inner.open()
+
+    def read(self) -> Frame:
+        frame = self.inner.read()
+        self.reads += 1
+        return np.full_like(frame, 12) if self.reads in self.covered else frame
+
+    def close(self) -> None:
+        self.inner.close()
+
+
+class TamperSink(RecordingSink):
+    def publish_event(self, event: CameraEvent) -> None:
+        super().publish_event(event)
+        if isinstance(event, CameraRestoredEvent):
+            self.done.set()
+
+
+class TestTampering:
+    def test_a_covered_camera_raises_a_tamper_event_and_its_end(self) -> None:
+        sink = TamperSink()
+        worker = make_worker(sink, source=CoveredSource(range(150, 300)))
+
+        run_until_done(worker, sink, timeout=20)
+
+        [tampered] = [e for e in sink.events if isinstance(e, CameraTamperedEvent)]
+        [restored] = [e for e in sink.events if isinstance(e, CameraRestoredEvent)]
+        assert tampered.event.kind is EventKind.COVERED
+        assert tampered.event.alert is True
+        assert decode(tampered.snapshot_jpeg).max() < 40  # the picture as it is: dark
+        assert tampered.thumbnail_jpeg
+        assert restored.event.id == tampered.event.id
+        assert restored.event.ended_at is not None
+        covered_for = (restored.event.ended_at - tampered.event.started_at).total_seconds()
+        assert 15 <= covered_for <= 20  # covered 15 s, then normal for a few seconds
+
+    def test_cameras_can_turn_tamper_alerts_off(self) -> None:
+        sink = RecordingSink(stop_after_ended=99)
+        detection = DETECTION.model_copy(update={"tamper_alerts": False})
+        worker = make_worker(sink, source=CoveredSource(range(150, 400)), detection=detection)
+        worker.start()
+        deadline = threading.Event()
+        deadline.wait(3)
+        assert worker.stop(timeout=5)
+
+        assert not any(isinstance(e, CameraTamperedEvent) for e in sink.events)
+
+    def test_stopping_a_tampered_camera_ends_its_tamper_event(self) -> None:
+        sink = TamperSink()
+        # Covered from the 15th second on, and never uncovered: the stop ends it.
+        source = CoveredSource(range(150, 10_000))
+        worker = make_worker(sink, source=source)
+        worker.start()
+        while not any(isinstance(e, CameraTamperedEvent) for e in sink.events):
+            threading.Event().wait(0.05)
+        assert worker.stop(timeout=5)
+
+        assert [type(e) for e in sink.events if isinstance(e, CameraRestoredEvent)] == [
+            CameraRestoredEvent
+        ]

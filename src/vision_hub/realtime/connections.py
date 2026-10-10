@@ -26,9 +26,10 @@ from vision_hub.domain.events import (
     DEVICE_STATUS,
     MOTION_ENDED,
     MOTION_STARTED,
+    TAMPER_ENDED,
+    TAMPER_STARTED,
     CameraEvent,
-    MotionEndedEvent,
-    MotionStartedEvent,
+    DeviceStatusChanged,
 )
 from vision_hub.schemas.ws import (
     ErrorData,
@@ -126,9 +127,7 @@ class _Connection:
                 raise _ClosedError(CloseCode.TRY_AGAIN_LATER, "client too slow")
             event = envelope.message
             device_id = (
-                event.event.device_id
-                if isinstance(event, MotionStartedEvent | MotionEndedEvent)
-                else event.device_id
+                event.device_id if isinstance(event, DeviceStatusChanged) else event.event.device_id
             )
             if self.filter.matches(device_id):
                 await self.send(to_message(event))
@@ -215,6 +214,8 @@ class ConnectionManager:
         subscription = self._bus.subscribe(
             f"{MOTION_STARTED}.*",
             f"{MOTION_ENDED}.*",
+            f"{TAMPER_STARTED}.*",
+            f"{TAMPER_ENDED}.*",
             f"{DEVICE_STATUS}.*",
             maxsize=self._config.client_queue_size,
             overflow="drop_newest",

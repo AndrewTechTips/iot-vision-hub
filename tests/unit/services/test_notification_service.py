@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Callable, Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -10,11 +10,13 @@ from vision_hub.core.metrics import Metrics
 from vision_hub.core.security import utc_now
 from vision_hub.domain.events import (
     CameraEvent,
+    CameraRestoredEvent,
+    CameraTamperedEvent,
     MotionEndedEvent,
     MotionStartedEvent,
     topic_for,
 )
-from vision_hub.domain.motion import MotionEvent
+from vision_hub.domain.motion import EventKind, MotionEvent
 from vision_hub.domain.notifications import (
     Alert,
     Delivery,
@@ -442,6 +444,48 @@ class TestOutbox:
         await alerts.stop()
 
         assert "outbox_unavailable" in [r["event"] for r in log_records()]
+
+
+class TestTampering:
+    def tampered(self, hub: Harness, event_id: str = "t1") -> CameraTamperedEvent:
+        event = MotionEvent(id=event_id, device_id="porch", started_at=T0, kind=EventKind.COVERED)
+        hub.events[event_id] = event
+        return CameraTamperedEvent(event=event, snapshot_jpeg=b"dark")
+
+    async def test_a_tampered_camera_alerts_at_once(self, hub: Harness) -> None:
+        notifier = FakeNotifier()
+        alerts = hub.service(notifier)
+        await alerts.start()
+
+        hub.publish(self.tampered(hub))
+        await asyncio.wait_for(notifier.delivered.wait(), 1)
+        await alerts.stop()
+
+        [alert] = notifier.sent
+        assert alert.event.kind is EventKind.COVERED
+        assert alert.image_jpeg == b"stored"
+
+    async def test_tampering_skips_the_motion_cooldown(self, hub: Harness) -> None:
+        notifier = FakeNotifier()
+        alerts = hub.service(notifier, clock=Clock())
+
+        await alerts.handle(hub.ended("porch", "e1"))
+        await alerts.handle_tamper(self.tampered(hub))  # same device, same moment
+        await alerts.stop()
+
+        assert sorted(a.event.id for a in notifier.sent) == ["e1", "t1"]
+
+    async def test_the_end_of_tampering_does_not_alert(self, hub: Harness) -> None:
+        notifier = FakeNotifier()
+        alerts = hub.service(notifier)
+        await alerts.start()
+
+        restored = replace(self.tampered(hub).event, ended_at=T0)
+        hub.publish(CameraRestoredEvent(event=restored))
+        await settle()
+        await alerts.stop()
+
+        assert notifier.sent == []
 
 
 class TestCooldown:

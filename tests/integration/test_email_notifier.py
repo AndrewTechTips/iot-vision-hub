@@ -7,7 +7,7 @@ import pytest
 from pydantic import SecretStr
 
 from vision_hub.core.config import SmtpConfig
-from vision_hub.domain.motion import MotionEvent
+from vision_hub.domain.motion import EventKind, MotionEvent
 from vision_hub.domain.notifications import Alert, NotificationError
 from vision_hub.infra.notifiers.email import EmailNotifier
 
@@ -67,6 +67,17 @@ class TestMessage:
         text = message.get_body(preferencelist=("plain",))
         assert text is not None
         assert "Person was detected by Front porch" in text.get_content()
+
+    def test_says_what_was_done_to_a_tampered_camera(self) -> None:
+        covered = replace(ALERT, event=replace(ALERT.event, kind=EventKind.COVERED, ended_at=None))
+
+        message = EmailNotifier(smtp_config(25)).build_message(covered)
+
+        assert message["Subject"] == "Camera covered: Front porch"
+        text = message.get_body(preferencelist=("plain",))
+        assert text is not None
+        assert "Front porch may have been tampered with" in text.get_content()
+        assert "covers the lens" in text.get_content()
 
     def test_text_body_summarises_the_event(self) -> None:
         message = EmailNotifier(smtp_config(25)).build_message(ALERT)

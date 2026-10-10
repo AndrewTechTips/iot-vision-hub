@@ -176,6 +176,7 @@ async def test_events_come_with_a_playable_clip(
     clip_start, started, ended, snapshot = (datetime.fromisoformat(value) for value in moments)
     assert clip_start < started <= snapshot <= ended
     assert event["person_at"] is None  # no person model in these tests
+    assert event["kind"] == "motion"
 
     response = await client.get(clip["url"])  # signed: what a <video> tag sends
 

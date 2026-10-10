@@ -11,7 +11,13 @@ from typing import Protocol, cast
 from vision_hub.core.logging import get_logger
 from vision_hub.core.metrics import Metrics
 from vision_hub.domain.devices import DeviceStatus
-from vision_hub.domain.events import CameraEvent, DeviceStatusChanged, MotionEndedEvent
+from vision_hub.domain.events import (
+    CameraEvent,
+    CameraRestoredEvent,
+    CameraTamperedEvent,
+    DeviceStatusChanged,
+    MotionEndedEvent,
+)
 from vision_hub.domain.motion import MotionEvent
 from vision_hub.vision.bridge import LatestFrame, LoopBridge
 from vision_hub.vision.clip import ClipSettings
@@ -80,6 +86,7 @@ class CameraManager:
         self._frames: dict[str, LatestFrame] = {}
         self._statuses: dict[str, DeviceStatus] = {}
         self._last_events: dict[str, MotionEvent] = {}
+        self._tampered: dict[str, MotionEvent] = {}  # open tamper events, per device
         self._backoffs: dict[str, Backoff] = {}
         self._restarts: dict[str, asyncio.Task[None]] = {}
         self._wanted: set[str] = set()  # devices that should be running
@@ -100,6 +107,10 @@ class CameraManager:
 
     def last_event(self, device_id: str) -> MotionEvent | None:
         return self._last_events.get(device_id)
+
+    def tampering(self, device_id: str) -> MotionEvent | None:
+        """The camera's open tamper event, while it is covered, blurred or moved."""
+        return self._tampered.get(device_id)
 
     def frames(self, device_id: str) -> LatestFrame:
         """Live frames of a device (raises ``KeyError`` for unknown devices)."""
@@ -134,7 +145,14 @@ class CameraManager:
     async def forget(self, device_id: str) -> None:
         """Stop a device and drop all its state (it was deleted)."""
         await self.stop(device_id)
-        for state in (self._specs, self._frames, self._statuses, self._last_events, self._backoffs):
+        for state in (
+            self._specs,
+            self._frames,
+            self._statuses,
+            self._last_events,
+            self._tampered,
+            self._backoffs,
+        ):
             state.pop(device_id, None)
         self._metrics.forget_camera(device_id)
 
@@ -172,6 +190,10 @@ class CameraManager:
                 self._backoffs[event.device_id].reset()
         elif isinstance(event, MotionEndedEvent):
             self._last_events[event.event.device_id] = event.event
+        elif isinstance(event, CameraTamperedEvent):
+            self._tampered[event.event.device_id] = event.event
+        elif isinstance(event, CameraRestoredEvent):
+            self._tampered.pop(event.event.device_id, None)
         try:
             self._on_event(event)
         except Exception:

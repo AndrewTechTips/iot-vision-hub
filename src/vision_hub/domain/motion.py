@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,9 +43,19 @@ class DetectionResult:
 NO_MOTION = DetectionResult(motion=False)
 
 
+class EventKind(StrEnum):
+    """What an event is: motion, or the camera being tampered with (vision/tamper.py)."""
+
+    MOTION = "motion"
+    COVERED = "covered"
+    BLURRED = "blurred"
+    MOVED = "moved"
+
+
 @dataclass(frozen=True, slots=True)
 class MotionEvent:
-    """One continuous period of motion on one device."""
+    """One continuous period of motion on one device, or of the camera being tampered with
+    (``kind``): both are events in the history, with a snapshot and an alert."""
 
     id: str
     device_id: str
@@ -58,3 +69,4 @@ class MotionEvent:
     person_confidence: float | None = None
     person_at: datetime | None = None  # when the frame the person was found on was captured
     alert: bool = True  # False when the camera alerts on people only and none was seen
+    kind: EventKind = EventKind.MOTION

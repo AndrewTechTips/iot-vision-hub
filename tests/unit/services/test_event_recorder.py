@@ -1,4 +1,5 @@
 from collections.abc import Collection, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -8,13 +9,15 @@ from vision_hub.core.metrics import Metrics
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import (
     CameraEvent,
+    CameraRestoredEvent,
+    CameraTamperedEvent,
     DeviceStatusChanged,
     MotionEndedEvent,
     MotionStartedEvent,
     VideoClip,
 )
 from vision_hub.domain.history import ActivityBucket, EventRecord
-from vision_hub.domain.motion import BoundingBox, MotionEvent
+from vision_hub.domain.motion import BoundingBox, EventKind, MotionEvent
 from vision_hub.domain.storage import SnapshotKind, StoredSnapshot
 from vision_hub.infra.storage.local import LocalSnapshotStore
 from vision_hub.services.events import EventRecorder
@@ -62,6 +65,9 @@ class FakeRepository:
         self, event_id: str, *, limit: int
     ) -> Sequence[EventRecord]:  # pragma: no cover
         return []
+
+    async def end(self, event_id: str, ended_at: datetime) -> None:
+        self.log.append(f"ended {event_id}")
 
     async def activity(self, **_: object) -> Sequence[ActivityBucket]:  # pragma: no cover
         return []
@@ -175,3 +181,31 @@ async def test_missing_thumbnail_is_skipped(tmp_path: Path, log: list[str]) -> N
 
     [(_, snapshots)] = repository.completed
     assert {s.kind for s in snapshots} == {SnapshotKind.CLEAN, SnapshotKind.ANNOTATED}
+
+
+async def test_tampering_is_stored_with_its_picture_then_ended(
+    tmp_path: Path, log: list[str]
+) -> None:
+    repository = FakeRepository(log)
+    events = recorder(repository, tmp_path, log)
+    events.start()
+    covered = replace(MOTION, id="evt-9", ended_at=None, kind=EventKind.COVERED)
+
+    events.submit(CameraTamperedEvent(event=covered, snapshot_jpeg=b"dark", thumbnail_jpeg=b"t"))
+    events.submit(CameraRestoredEvent(event=replace(covered, ended_at=covered.started_at)))
+    await events.stop()
+
+    assert log == [
+        "stored end evt-9",  # stored open, with its picture
+        "published CameraTamperedEvent",
+        "ended evt-9",
+        "published CameraRestoredEvent",
+    ]
+    [(stored, snapshots)] = repository.completed
+    assert stored.ended_at is None
+    assert {s.kind for s in snapshots} == {
+        SnapshotKind.CLEAN,
+        SnapshotKind.ANNOTATED,
+        SnapshotKind.THUMBNAIL,
+    }
+    assert repository.moments == [(covered.started_at, None)]

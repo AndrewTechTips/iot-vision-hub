@@ -51,6 +51,10 @@ class EventRepository(Protocol):
         its snapshot was taken and its clip starts, so a player can mark those moments."""
         ...
 
+    async def end(self, event_id: str, ended_at: datetime) -> None:
+        """Close an event that is still open, keeping everything else (tampering ends so)."""
+        ...
+
     async def get(self, event_id: str) -> EventRecord | None: ...
 
     async def list(
@@ -74,8 +78,8 @@ class EventRepository(Protocol):
     async def activity(
         self, *, since: datetime, until: datetime, device_id: str | None = None
     ) -> Sequence[ActivityBucket]:
-        """Events started in [since, until), counted per camera and hour by the database.
-        Hours without events are left out."""
+        """Motion events started in [since, until), counted per camera and hour by the
+        database (tampering is not activity). Hours without events are left out."""
         ...
 
     async def expired(

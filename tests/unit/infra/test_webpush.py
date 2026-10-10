@@ -180,6 +180,7 @@ class TestNotifier:
                 "started_at": "2026-10-05T11:59:48+00:00",
                 "duration_seconds": 12.0,
                 "person": None,
+                "tamper": None,
                 "image": "/snapshot/evt-1",
             }
             assert headers["Content-Encoding"] == "aes128gcm"

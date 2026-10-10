@@ -9,6 +9,7 @@ from email.utils import make_msgid
 import aiosmtplib
 
 from vision_hub.core.config import SmtpConfig
+from vision_hub.domain.motion import EventKind
 from vision_hub.domain.notifications import Alert, NotificationError
 
 # Retrying cannot fix these: wrong credentials, or the server refusing sender/recipients.
@@ -18,6 +19,14 @@ _PERMANENT = (
     aiosmtplib.SMTPSenderRefused,
     aiosmtplib.SMTPNotSupported,
 )
+
+
+# What tampering means, in a sentence: (short word, explanation).
+TAMPERING = {
+    EventKind.COVERED: ("covered", "its picture went flat, as if something covers the lens"),
+    EventKind.BLURRED: ("out of focus", "its picture went blurry: a smeared lens or turned focus"),
+    EventKind.MOVED: ("moved", "it no longer sees its usual view, as if it was turned"),
+}
 
 
 class EmailNotifier:
@@ -67,6 +76,9 @@ class EmailNotifier:
         message = EmailMessage()
         what = "Person" if event.person else "Motion"
         message["Subject"] = f"{what} detected: {alert.device_name}"
+        if event.kind is not EventKind.MOTION:
+            word, why = TAMPERING[event.kind]
+            message.replace_header("Subject", f"Camera {word}: {alert.device_name}")
         message["From"] = self._sender
         message["To"] = ", ".join(self._config.effective_recipients)
         message["X-Vision-Hub-Event"] = event.id
@@ -81,6 +93,12 @@ class EmailNotifier:
                 else "The snapshot of the event is no longer available."
             )
         )
+        if event.kind is not EventKind.MOTION:
+            word, why = TAMPERING[event.kind]
+            summary = (
+                f"{alert.device_name} may have been tampered with at {started}: {why}. "
+                + ("What it sees now is attached." if image else "")
+            ).strip()
         message.set_content(f"{summary}\n\nEvent ID: {event.id}\n")
         if not image:
             return message

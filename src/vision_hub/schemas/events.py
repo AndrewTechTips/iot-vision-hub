@@ -5,7 +5,7 @@ from pydantic import Field
 
 from vision_hub.core.security import UrlSigner
 from vision_hub.domain.history import ActivityBucket, EventRecord
-from vision_hub.domain.motion import BoundingBox
+from vision_hub.domain.motion import BoundingBox, EventKind
 from vision_hub.domain.storage import IMAGE_KINDS, SnapshotKind
 from vision_hub.schemas.base import ApiSchema
 
@@ -30,6 +30,9 @@ class ClipLink(ApiSchema):
 class EventOut(ApiSchema):
     id: str
     device_id: str
+    kind: EventKind = Field(
+        description='"motion", or the camera being tampered with: "covered", "blurred", "moved"'
+    )
     started_at: datetime
     ended_at: datetime | None
     duration_seconds: float | None
@@ -86,6 +89,7 @@ class EventOut(ApiSchema):
         return cls(
             id=event.id,
             device_id=event.device_id,
+            kind=event.kind,
             started_at=event.started_at,
             ended_at=event.ended_at,
             duration_seconds=duration,

@@ -4,8 +4,9 @@ Server -> client messages share an envelope: ``{"type", "v", "ts", "device_id"?,
 Client -> server messages: ``subscribe``, ``unsubscribe`` and ``pong``.
 """
 
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, assert_never
 from uuid import UUID
 
 from pydantic import Field, TypeAdapter
@@ -14,12 +15,14 @@ from vision_hub.core.security import utc_now
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import (
     CameraEvent,
+    CameraRestoredEvent,
+    CameraTamperedEvent,
     DeviceStatusChanged,
     MotionEndedEvent,
     MotionStartedEvent,
 )
 from vision_hub.domain.history import EventRecord
-from vision_hub.domain.motion import BoundingBox
+from vision_hub.domain.motion import BoundingBox, EventKind, MotionEvent
 from vision_hub.schemas.base import ApiSchema, RequestSchema, UtcDateTime
 
 PROTOCOL_VERSION: Literal[1] = 1
@@ -33,6 +36,10 @@ class _ServerMessage(ApiSchema):
 class MotionStartedData(ApiSchema):
     event_id: str
     started_at: datetime
+    kind: EventKind = Field(
+        default=EventKind.MOTION,
+        description='"motion", or the camera being tampered with: "covered", "blurred", "moved"',
+    )
 
 
 class MotionEndedData(MotionStartedData):
@@ -151,28 +158,42 @@ def to_message(event: CameraEvent) -> ServerMessage:
             return DeviceStatusMessage(
                 device_id=event.device_id, data=DeviceStatusData(status=event.status)
             )
-        case MotionStartedEvent(event=motion):
+        # Tampering travels as an event of its kind: clients that only know motion still see
+        # it start and end, and replay after a reconnect works the same.
+        case MotionStartedEvent(event=motion) | CameraTamperedEvent(event=motion):
             return MotionStartedMessage(
                 device_id=motion.device_id,
-                data=MotionStartedData(event_id=motion.id, started_at=motion.started_at),
-            )
-        case MotionEndedEvent(event=motion):
-            return MotionEndedMessage(
-                device_id=motion.device_id,
-                data=MotionEndedData(
-                    event_id=motion.id,
-                    started_at=motion.started_at,
-                    ended_at=motion.ended_at,
-                    peak_area_ratio=motion.peak_area_ratio,
-                    motion_frames=motion.motion_frames,
-                    boxes=list(event.boxes),
-                    person=motion.person,
-                    person_confidence=motion.person_confidence,
-                    alert=motion.alert,
+                data=MotionStartedData(
+                    event_id=motion.id, started_at=motion.started_at, kind=motion.kind
                 ),
             )
+        case MotionEndedEvent(event=motion):
+            return _ended(motion, event.boxes)
+        case CameraRestoredEvent(event=motion):
+            return _ended(motion, ())
         case _:  # pragma: no cover - mypy proves the match is exhaustive
-            raise AssertionError(event)
+            assert_never(event)
+
+
+def _ended(
+    motion: MotionEvent, boxes: Sequence[BoundingBox], *, replay: bool = False
+) -> MotionEndedMessage:
+    return MotionEndedMessage(
+        device_id=motion.device_id,
+        replay=replay,
+        data=MotionEndedData(
+            event_id=motion.id,
+            started_at=motion.started_at,
+            ended_at=motion.ended_at,
+            peak_area_ratio=motion.peak_area_ratio,
+            motion_frames=motion.motion_frames,
+            boxes=list(boxes),
+            person=motion.person,
+            person_confidence=motion.person_confidence,
+            alert=motion.alert,
+            kind=motion.kind,
+        ),
+    )
 
 
 def replayed_message(record: EventRecord) -> ServerMessage:
@@ -182,20 +203,8 @@ def replayed_message(record: EventRecord) -> ServerMessage:
         return MotionStartedMessage(
             device_id=motion.device_id,
             replay=True,
-            data=MotionStartedData(event_id=motion.id, started_at=motion.started_at),
+            data=MotionStartedData(
+                event_id=motion.id, started_at=motion.started_at, kind=motion.kind
+            ),
         )
-    return MotionEndedMessage(
-        device_id=motion.device_id,
-        replay=True,
-        data=MotionEndedData(
-            event_id=motion.id,
-            started_at=motion.started_at,
-            ended_at=motion.ended_at,
-            peak_area_ratio=motion.peak_area_ratio,
-            motion_frames=motion.motion_frames,
-            boxes=list(record.boxes),
-            person=motion.person,
-            person_confidence=motion.person_confidence,
-            alert=motion.alert,
-        ),
-    )
+    return _ended(motion, record.boxes, replay=True)

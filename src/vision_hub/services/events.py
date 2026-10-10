@@ -10,7 +10,13 @@ from vision_hub.core.logging import get_logger
 from vision_hub.core.metrics import Metrics
 from vision_hub.core.security import utc_now
 from vision_hub.core.tasks import TaskSupervisor
-from vision_hub.domain.events import CameraEvent, MotionEndedEvent, MotionStartedEvent
+from vision_hub.domain.events import (
+    CameraEvent,
+    CameraRestoredEvent,
+    CameraTamperedEvent,
+    MotionEndedEvent,
+    MotionStartedEvent,
+)
 from vision_hub.domain.history import ActivityBucket, EventRecord, EventRepository
 from vision_hub.domain.motion import MotionEvent
 from vision_hub.domain.storage import SnapshotKind, SnapshotStore, StoredSnapshot
@@ -94,6 +100,23 @@ class EventRecorder:
                     snapshot_at=event.snapshot_at,
                     clip_started_at=event.clip.started_at if event.clip else None,
                 )
+            case CameraTamperedEvent(event=tampered):
+                # Stored with its picture before it is published: the alert goes out now.
+                files = {
+                    SnapshotKind.CLEAN: event.snapshot_jpeg,
+                    SnapshotKind.ANNOTATED: event.snapshot_jpeg,  # nothing to box
+                    SnapshotKind.THUMBNAIL: event.thumbnail_jpeg,
+                }
+                stored = [
+                    await self._store.save(tampered.id, kind, data, tampered.started_at)
+                    for kind, data in files.items()
+                    if data
+                ]
+                await self._repository.complete(
+                    tampered, (), stored, snapshot_at=tampered.started_at
+                )
+            case CameraRestoredEvent(event=restored) if restored.ended_at is not None:
+                await self._repository.end(restored.id, restored.ended_at)
             case _:
                 pass  # device status changes are live-only
 

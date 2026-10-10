@@ -1,6 +1,7 @@
 import asyncio
 import threading
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -8,7 +9,14 @@ import pytest
 from vision_hub.core.metrics import Metrics
 from vision_hub.core.security import utc_now
 from vision_hub.domain.devices import DeviceStatus
-from vision_hub.domain.events import CameraEvent, DeviceStatusChanged, MotionEndedEvent
+from vision_hub.domain.events import (
+    CameraEvent,
+    CameraRestoredEvent,
+    CameraTamperedEvent,
+    DeviceStatusChanged,
+    MotionEndedEvent,
+)
+from vision_hub.domain.motion import EventKind, MotionEvent
 from vision_hub.vision.bridge import FramesClosedError
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.fleet import DeviceSpec
@@ -245,3 +253,24 @@ class TestSupervision:
         await manager.stop("ghost")
         with pytest.raises(KeyError):
             manager.frames("ghost")
+
+
+class TestTampering:
+    async def test_knows_which_cameras_are_tampered_with_right_now(self) -> None:
+        factory = FakeFactory()
+        manager = CameraManager(worker_factory=factory)
+        await manager.start(spec())
+        sink = factory.workers[0].sink
+        covered = MotionEvent(
+            id="t1", device_id="cam-1", started_at=datetime.now(UTC), kind=EventKind.COVERED
+        )
+
+        sink.publish_event(CameraTamperedEvent(event=covered, snapshot_jpeg=b"x"))
+        await wait_for(lambda: manager.tampering("cam-1") is not None)
+        tampered = manager.tampering("cam-1")
+        sink.publish_event(CameraRestoredEvent(event=covered))
+        await wait_for(lambda: manager.tampering("cam-1") is None)
+        await manager.stop_all()
+
+        assert tampered == covered
+        assert manager.tampering("other") is None

@@ -5,6 +5,7 @@ event loop (AD-7). OpenCV releases the GIL inside its C++ calls, so cameras run 
 """
 
 import threading
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
@@ -19,12 +20,14 @@ from vision_hub.core.security import utc_now
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import (
     CameraEvent,
+    CameraRestoredEvent,
+    CameraTamperedEvent,
     DeviceStatusChanged,
     MotionEndedEvent,
     MotionStartedEvent,
     VideoClip,
 )
-from vision_hub.domain.motion import MotionEvent
+from vision_hub.domain.motion import EventKind, MotionEvent
 from vision_hub.vision.annotate import draw_boxes
 from vision_hub.vision.bridge import FramePacket
 from vision_hub.vision.clip import ClipRecorder, ClipSettings
@@ -39,6 +42,7 @@ from vision_hub.vision.sources import (
     SourceError,
     SourceStoppedError,
 )
+from vision_hub.vision.tamper import TamperEnded, TamperMonitor, TamperStarted
 from vision_hub.vision.tracker import MotionEnded, MotionStarted, MotionTracker
 
 logger = get_logger(__name__)
@@ -99,6 +103,8 @@ class CameraWorker:
         self._persons = persons
         self._alert_on = detection.alert_on
         self._person_check: EventCheck | None = None  # of the open event
+        self._tamper = TamperMonitor() if detection.tamper_alerts else None
+        self._tampered: MotionEvent | None = None  # the open tamper event
         self._thread: threading.Thread | None = None
         self._sequence = 0
         self._next_due: datetime | None = None
@@ -174,6 +180,8 @@ class CameraWorker:
 
     def _analyse(self, frame: Frame, at: datetime) -> None:
         detection = self._detector.process(frame)
+        if self._tamper is not None:
+            self._watch_tampering(frame, at)
         update = self._tracker.update(frame, detection, at)
         if isinstance(update, MotionStarted):
             logger.info("motion_started", event_id=update.event.id)
@@ -294,7 +302,41 @@ class CameraWorker:
             DeviceStatusChanged(device_id=self.device_id, status=status, at=self._clock())
         )
 
+    def _watch_tampering(self, frame: Frame, at: datetime) -> None:
+        """Covered, blurred or moved: a tamper event, alerted at once with the picture now."""
+        assert self._tamper is not None  # noqa: S101 - only called when watching
+        match self._tamper.update(frame, at):
+            case TamperStarted(kind=kind, at=since):
+                event = MotionEvent(
+                    id=str(uuid.uuid7()),
+                    device_id=self.device_id,
+                    started_at=since,
+                    kind=EventKind(kind.value),
+                )
+                self._tampered = event
+                logger.warning("camera_tampered", kind=kind.value, event_id=event.id)
+                quality = self._encoding.snapshot_jpeg_quality
+                thumbnail, _ = resize_to_width(frame, self._encoding.thumbnail_width)
+                self._sink.publish_event(
+                    CameraTamperedEvent(
+                        event=event,
+                        snapshot_jpeg=_encode(frame, quality),
+                        thumbnail_jpeg=_encode(thumbnail, quality),
+                    )
+                )
+            case TamperEnded(at=ended, accepted=accepted):
+                logger.info("camera_restored", accepted=accepted)
+                self._restore(ended)
+            case None:
+                pass
+
+    def _restore(self, at: datetime) -> None:
+        if self._tampered is not None:
+            event, self._tampered = replace(self._tampered, ended_at=at), None
+            self._sink.publish_event(CameraRestoredEvent(event=event))
+
     def _finish(self, *, crashed: bool) -> None:
+        self._restore(self._clock())  # a stopped camera is no longer known to be tampered with
         try:
             if (ended := self._tracker.close()) is not None:
                 self._publish_motion_ended(ended, self._finish_clip())  # stopped mid-event

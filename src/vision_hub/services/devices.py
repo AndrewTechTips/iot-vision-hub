@@ -47,6 +47,7 @@ class DeviceView:
     running: bool
     latest_frame: FramePacket | None
     last_event: MotionEvent | None
+    tampering: MotionEvent | None = None  # open while the camera is covered, blurred or moved
 
 
 class DeviceService:
@@ -252,4 +253,5 @@ class DeviceService:
             running=self._cameras.is_running(spec.id),
             latest_frame=latest,
             last_event=self._cameras.last_event(spec.id),
+            tampering=self._cameras.tampering(spec.id),
         )

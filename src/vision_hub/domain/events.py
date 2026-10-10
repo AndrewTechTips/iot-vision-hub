@@ -44,12 +44,37 @@ class MotionEndedEvent:
     clip: VideoClip | None = None
 
 
-type CameraEvent = DeviceStatusChanged | MotionStartedEvent | MotionEndedEvent
+@dataclass(frozen=True, slots=True)
+class CameraTamperedEvent:
+    """The camera was covered, blurred or moved (``event.kind``): alerts at once, unlike motion,
+    with the picture as it is now."""
+
+    event: MotionEvent
+    snapshot_jpeg: bytes = field(repr=False)
+    thumbnail_jpeg: bytes = field(default=b"", repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class CameraRestoredEvent:
+    """The tampering is over (``event.ended_at``), or the camera stopped meanwhile."""
+
+    event: MotionEvent
+
+
+type CameraEvent = (
+    DeviceStatusChanged
+    | MotionStartedEvent
+    | MotionEndedEvent
+    | CameraTamperedEvent
+    | CameraRestoredEvent
+)
 
 
 # Topics are "<kind>.<device_id>"; subscribe with globs such as "motion.ended.*".
 MOTION_STARTED = "motion.started"
 MOTION_ENDED = "motion.ended"
+TAMPER_STARTED = "tamper.started"
+TAMPER_ENDED = "tamper.ended"
 DEVICE_STATUS = "device.status"
 
 
@@ -61,5 +86,9 @@ def topic_for(event: CameraEvent) -> str:
             return f"{MOTION_STARTED}.{event.event.device_id}"
         case MotionEndedEvent():
             return f"{MOTION_ENDED}.{event.event.device_id}"
+        case CameraTamperedEvent():
+            return f"{TAMPER_STARTED}.{event.event.device_id}"
+        case CameraRestoredEvent():
+            return f"{TAMPER_ENDED}.{event.event.device_id}"
         case _:  # pragma: no cover - mypy proves the match is exhaustive
             assert_never(event)

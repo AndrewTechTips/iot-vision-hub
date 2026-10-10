@@ -6,6 +6,7 @@ from datetime import datetime
 from pydantic import Field
 
 from vision_hub.domain.devices import DeviceStatus
+from vision_hub.domain.motion import EventKind
 from vision_hub.schemas.base import ApiSchema, RequestSchema
 from vision_hub.services.devices import DeviceView
 from vision_hub.vision.config import DetectionConfig
@@ -26,6 +27,12 @@ class LastEvent(ApiSchema):
     peak_area_ratio: float
 
 
+class TamperOut(ApiSchema):
+    event_id: str
+    kind: EventKind = Field(description='"covered", "blurred" or "moved"')
+    since: datetime
+
+
 class DeviceOut(ApiSchema):
     id: str
     name: str
@@ -38,6 +45,9 @@ class DeviceOut(ApiSchema):
     running: bool
     stream: StreamInfo | None = Field(description="Latest live frame, if the camera produced one")
     last_event: LastEvent | None
+    tampering: TamperOut | None = Field(
+        description="Set while the camera is covered, out of focus or turned away"
+    )
 
     @classmethod
     def from_view(cls, view: DeviceView) -> DeviceOut:
@@ -58,6 +68,15 @@ class DeviceOut(ApiSchema):
                 else None
             ),
             last_event=LastEvent.model_validate(event) if event else None,
+            tampering=(
+                TamperOut(
+                    event_id=view.tampering.id,
+                    kind=view.tampering.kind,
+                    since=view.tampering.started_at,
+                )
+                if view.tampering
+                else None
+            ),
         )
 
 

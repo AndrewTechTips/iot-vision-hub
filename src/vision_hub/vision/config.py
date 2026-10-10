@@ -40,6 +40,9 @@ class DetectionConfig(BaseModel):
     # Alerts: on any motion, or only when a person was seen (needs person detection; without
     # it every event alerts)
     alert_on: Literal["motion", "person"] = "motion"
+    # Watch for the camera being covered, knocked out of focus or turned away. A room whose only
+    # light is switched off looks covered: turn this off for such cameras.
+    tamper_alerts: bool = True
 
     @field_validator("blur_kernel_size")
     @classmethod

@@ -27,7 +27,13 @@ from vision_hub.core.metrics import Metrics
 from vision_hub.core.security import utc_now
 from vision_hub.core.tasks import TaskSupervisor
 from vision_hub.domain.bus import EventBus, Subscription
-from vision_hub.domain.events import MOTION_ENDED, CameraEvent, MotionEndedEvent
+from vision_hub.domain.events import (
+    MOTION_ENDED,
+    TAMPER_STARTED,
+    CameraEvent,
+    CameraTamperedEvent,
+    MotionEndedEvent,
+)
 from vision_hub.domain.motion import MotionEvent
 from vision_hub.domain.notifications import (
     Alert,
@@ -91,7 +97,9 @@ class NotificationService:
         if self._consumer is not None or not self.enabled:
             return
         # Subscribe first, before cameras start, so no event published afterwards is missed.
-        subscription = self._subscription = self._bus.subscribe(f"{MOTION_ENDED}.*")
+        subscription = self._subscription = self._bus.subscribe(
+            f"{MOTION_ENDED}.*", f"{TAMPER_STARTED}.*"
+        )
         pending: int | None = None
         try:
             since = self._clock() - self._cooldown
@@ -149,13 +157,26 @@ class NotificationService:
             return
         self._last_alert[device_id] = now
         channels = [name for name, notifier in self._notifiers.items() if await _wanted(notifier)]
+        await self._deliver(ended.event, ended.annotated_jpeg, channels, at=now)
+
+    async def handle_tamper(self, tampered: CameraTamperedEvent) -> None:
+        """A camera covered, blurred or moved alerts at once, past any motion cooldown: it is
+        rare, and the moment someone is defeating a camera is the moment to know."""
+        channels = [name for name, notifier in self._notifiers.items() if await _wanted(notifier)]
+        logger.info("alert_tamper", device_id=tampered.event.device_id, kind=tampered.event.kind)
+        await self._deliver(tampered.event, tampered.snapshot_jpeg, channels, at=self._clock())
+
+    async def _deliver(
+        self, event: MotionEvent, image_jpeg: bytes, channels: list[str], *, at: datetime
+    ) -> None:
+        """Through the outbox (kept across restarts), or straight away if it is down."""
         if not channels:
             return
         try:
-            await self._outbox.enqueue(ended.event.id, device_id, channels, at=now)
+            await self._outbox.enqueue(event.id, event.device_id, channels, at=at)
         except Exception:
-            logger.exception("outbox_unavailable", device_id=device_id, event_id=ended.event.id)
-            alert = self._alert(ended.event, ended.annotated_jpeg)
+            logger.exception("outbox_unavailable", device_id=event.device_id, event_id=event.id)
+            alert = self._alert(event, image_jpeg)
             for notifier in (self._notifiers[name] for name in channels):
                 self._track(self._send_directly(notifier, alert))
             return
@@ -165,6 +186,8 @@ class NotificationService:
         async for envelope in subscription:
             if isinstance(envelope.message, MotionEndedEvent):
                 await self.handle(envelope.message)
+            elif isinstance(envelope.message, CameraTamperedEvent):
+                await self.handle_tamper(envelope.message)
 
     async def _dispatch_loop(self) -> None:
         while True:
