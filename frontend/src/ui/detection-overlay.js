@@ -14,6 +14,8 @@ import { h } from "./dom.js";
 const MAX_BOXES = 24;
 /** A box starting this close to the top (share of the picture) has no room for a label above. */
 const TOP_ROOM = 0.06;
+/** A box ending this close to the right edge has no room for a label running right. */
+const RIGHT_ROOM = 0.15;
 
 export function detectionOverlay() {
   const element = h("div", {
@@ -59,6 +61,7 @@ export function detectionOverlay() {
         Object.assign(box.style, item.place);
         box.toggleAttribute("data-person", item.person !== null);
         box.toggleAttribute("data-top", item.top);
+        box.toggleAttribute("data-right", item.right);
         const label = /** @type {HTMLElement} */ (box.firstElementChild);
         label.textContent = item.person === null ? "" : `Person ${Math.round(item.person * 100)} %`;
       });
@@ -70,8 +73,10 @@ export function detectionOverlay() {
 
 /**
  * @typedef {{ left: string, top: string, width: string, height: string }} Place
- * @typedef {{ place: Place, person: number | null, top: boolean }} Item
- * `top`: the box starts at the top of the picture, so its label goes inside it.
+ * @typedef {{ place: Place, person: number | null, top: boolean, right: boolean }} Item
+ * `top`: the box starts at the top of the picture, so its label goes inside it, at the bottom
+ * (the top corners hold the picture's own chips). `right`: the box ends near the right edge, so
+ * its label is aligned to the box's right side.
  */
 
 /**
@@ -100,6 +105,7 @@ export function layout(detections) {
         },
         person,
         top: top < TOP_ROOM,
+        right: clamp(x + width) > 1 - RIGHT_ROOM,
       };
     });
 }

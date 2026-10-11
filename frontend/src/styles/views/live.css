@@ -124,12 +124,20 @@
     &:empty {
       display: none;
     }
-    /* No room above a box at the top of the picture: inside it instead. */
+    /* No room above a box at the top of the picture: inside it, at the bottom (the top
+       corners hold the picture's chips). */
     [data-top] > & {
-      bottom: auto;
-      top: 3px;
+      bottom: 3px;
       left: 3px;
       margin-bottom: 0;
+    }
+    /* Near the right edge: aligned to the box's right side, so it stays in the picture. */
+    [data-right] > & {
+      left: auto;
+      right: -1px;
+    }
+    [data-top][data-right] > & {
+      right: 3px;
     }
   }
 

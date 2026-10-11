@@ -9,6 +9,7 @@ describe("layout", () => {
         place: { left: "50.00%", top: "25.00%", width: "10.00%", height: "50.00%" },
         person: null,
         top: false,
+        right: false,
       },
     ]);
   });
@@ -19,6 +20,7 @@ describe("layout", () => {
         place: { left: "0.00%", top: "90.00%", width: "20.00%", height: "10.00%" },
         person: null,
         top: false,
+        right: false,
       },
     ]);
   });
@@ -60,7 +62,15 @@ describe("layout", () => {
     const placed = layout({ boxes: [], person: null, tracks: [[0.2, -0.1, 0.3, 1, 3, 0.87]] });
 
     expect(placed[0].top).toBe(true);
+    expect(placed[0].right).toBe(false);
     expect(placed[0].place.top).toBe("0.00%");
+  });
+
+  it("marks boxes at the right edge, whose label is aligned to their right side", () => {
+    const placed = layout({ boxes: [], person: null, tracks: [[0.9, 0.2, 0.4, 0.5, 3, 0.87]] });
+
+    expect(placed[0].right).toBe(true);
+    expect(placed[0].place.width).toBe("10.00%");
   });
 
   it("has nothing to place without detections", () => {
