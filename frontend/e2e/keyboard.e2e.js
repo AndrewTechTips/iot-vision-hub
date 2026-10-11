@@ -64,6 +64,9 @@ test("everything works from the keyboard alone", async ({ page }) => {
   const snapshots = page.getByRole("button", { name: /^Open snapshot/ });
   await expect.poll(() => snapshots.count(), { timeout: 30_000 }).toBeGreaterThan(1);
   const first = snapshots.first();
+  // Followed by its start time: a new event may arrive meanwhile and push the rows down.
+  const rows = page.locator(".event-row").filter({ has: snapshots });
+  const secondStart = await rows.nth(1).locator("time").getAttribute("datetime");
   await tabTo(page, first, { limit: 60 });
   await page.keyboard.press("Enter");
   const viewer = page.getByRole("dialog");
@@ -73,7 +76,10 @@ test("everything works from the keyboard alone", async ({ page }) => {
   await expect(viewer).toContainText(/^.*2 of \d+/s);
   await page.keyboard.press("Escape");
   await expect(viewer).toBeHidden();
-  const second = page.getByRole("button", { name: /^Open snapshot/ }).nth(1);
+  const second = page
+    .locator(".event-row")
+    .filter({ has: page.locator(`time[datetime="${secondStart}"]`) })
+    .getByRole("button", { name: /^Open snapshot/ });
   await expect(second).toBeFocused();
 
   // Filters are keyboard controls too.
