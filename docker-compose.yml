@@ -1,6 +1,7 @@
 # Local stack: the hub and PostgreSQL.
-#   docker compose up --build --wait
-#   open http://localhost:8000/docs
+#   docker compose pull && docker compose up --wait    # the published image (amd64 or arm64)
+#   docker compose up --build --wait                   # or built from this checkout
+#   open http://localhost:8000
 # The database password comes from VISION_HUB_DB__PASSWORD in .env (default: vision_hub).
 services:
   postgres:
@@ -21,7 +22,7 @@ services:
 
   api:
     build: .
-    image: vision-hub:local
+    image: ghcr.io/andrewtechtips/iot-vision-hub:${VISION_HUB_IMAGE_TAG:-latest}
     depends_on:
       postgres:
         condition: service_healthy

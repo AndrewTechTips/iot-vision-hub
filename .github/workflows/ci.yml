@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -200,3 +201,14 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down --volumes
+
+  image:
+    name: Publish the image
+    needs: [quality, frontend, e2e, docker]
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/image.yml

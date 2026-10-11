@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 
 # ── Dashboard: build the static frontend (served by the hub at /) ────────────
-FROM node:22-alpine AS dashboard
+# Static files are the same for every architecture: built once, on the builder's own.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS dashboard
 
 WORKDIR /dashboard
 
@@ -17,7 +18,7 @@ RUN npm run build
 
 # ── Person-detection model (AD-22): fetched once, verified, cached by these args ─
 # Must match MODEL_URL and MODEL_SHA256 in src/vision_hub/vision/persons.py (a test checks).
-FROM python:3.14-slim-trixie AS model
+FROM --platform=$BUILDPLATFORM python:3.14-slim-trixie AS model
 
 ARG PERSON_MODEL_URL=https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/object_detection_yolox/object_detection_yolox_2022nov.onnx
 ARG PERSON_MODEL_SHA256=c5c2d13e59ae883e6af3b45daea64af4833a4951c92d116ec270d9ddbe998063
@@ -65,6 +66,8 @@ RUN groupadd --system --gid 10001 hub \
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=dashboard /dashboard/dist /app/dashboard
 COPY --from=model /person-yolox-s.onnx /app/models/person-yolox-s.onnx
+# The demo cameras' fleet (no secrets), so docker-compose.demo.yml works without a checkout.
+COPY devices.demo.toml /app/devices.demo.toml
 
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
