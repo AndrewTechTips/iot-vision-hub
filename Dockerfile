@@ -49,7 +49,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --frozen --no-dev --no-install-project
 
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable
@@ -68,6 +68,7 @@ COPY --from=dashboard /dashboard/dist /app/dashboard
 COPY --from=model /person-yolox-s.onnx /app/models/person-yolox-s.onnx
 # The demo cameras' fleet (no secrets), so docker-compose.demo.yml works without a checkout.
 COPY devices.demo.toml /app/devices.demo.toml
+COPY LICENSE /app/LICENSE
 
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \

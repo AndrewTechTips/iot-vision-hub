@@ -22,6 +22,7 @@ second, with the clip to prove it.</p>
   <a href="https://github.com/AndrewTechTips/iot-vision-hub/pkgs/container/iot-vision-hub"><img src="https://img.shields.io/badge/image-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white" alt="Docker image for amd64 and arm64" /></a>
   <img src="https://img.shields.io/badge/python-3.14-3776AB?logo=python&logoColor=white" alt="Python 3.14" />
   <img src="https://img.shields.io/badge/coverage-99%25-2ea44f" alt="Test coverage 99%" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT licence" /></a>
 </p>
 
 </div>
@@ -410,6 +411,11 @@ So I rebuilt it as a service: any number of cameras, detection in its own thread
 every event with a clip, and a dashboard that works as an app on my phone. The old script is
 still in the git history, and its lessons (debounced events, a background that adapts to the
 light, alerts that never get lost) shaped most of the design.
+
+## License
+
+[MIT](LICENSE). The demo footage comes from Pexels under its own licence; see
+[docs/demo-footage.md](docs/demo-footage.md).
 
 ## Contact
 
