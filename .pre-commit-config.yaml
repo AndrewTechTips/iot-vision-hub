@@ -23,7 +23,7 @@ repos:
         name: ruff format
         entry: uv run --frozen ruff format --force-exclude
         language: system
-        types_or: [python, pyi]
+        types_or: [python, pyi, markdown] # code blocks in docs too, as CI checks them
       - id: mypy
         name: mypy
         entry: uv run --frozen mypy

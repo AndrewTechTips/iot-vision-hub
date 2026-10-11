@@ -108,6 +108,7 @@ recorded request can't be replayed:
 ```python
 import hashlib, hmac, time
 
+
 def verify(secret: bytes, headers: dict[str, str], body: bytes, max_age: int = 300) -> bool:
     timestamp = headers["X-Vision-Hub-Timestamp"]
     if abs(time.time() - int(timestamp)) > max_age:
