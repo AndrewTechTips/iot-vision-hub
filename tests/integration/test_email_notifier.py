@@ -79,6 +79,28 @@ class TestMessage:
         assert "Front porch may have been tampered with" in text.get_content()
         assert "covers the lens" in text.get_content()
 
+    @pytest.mark.parametrize(
+        ("kind", "subject", "says"),
+        [
+            (
+                EventKind.LINGERING,
+                "Someone lingering: Front porch (Doorstep)",
+                "has been in Doorstep",
+            ),
+            (EventKind.CROSSED, "Line crossed: Front porch (Gate)", "crossed Gate"),
+        ],
+    )
+    def test_says_which_zone_rule_fired(self, kind: EventKind, subject: str, says: str) -> None:
+        zone = "Doorstep" if kind is EventKind.LINGERING else "Gate"
+        alert = replace(ALERT, event=replace(ALERT.event, kind=kind, zone=zone))
+
+        message = EmailNotifier(smtp_config(25)).build_message(alert)
+
+        assert message["Subject"] == subject
+        text = message.get_body(preferencelist=("plain",))
+        assert text is not None
+        assert says in text.get_content()
+
     def test_text_body_summarises_the_event(self) -> None:
         message = EmailNotifier(smtp_config(25)).build_message(ALERT)
 

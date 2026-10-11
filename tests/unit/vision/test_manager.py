@@ -11,9 +11,9 @@ from vision_hub.core.security import utc_now
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import (
     CameraEvent,
-    CameraRestoredEvent,
-    CameraTamperedEvent,
     DeviceStatusChanged,
+    IncidentEndedEvent,
+    IncidentStartedEvent,
     MotionEndedEvent,
 )
 from vision_hub.domain.motion import EventKind, MotionEvent
@@ -265,10 +265,10 @@ class TestTampering:
             id="t1", device_id="cam-1", started_at=datetime.now(UTC), kind=EventKind.COVERED
         )
 
-        sink.publish_event(CameraTamperedEvent(event=covered, snapshot_jpeg=b"x"))
+        sink.publish_event(IncidentStartedEvent(event=covered, snapshot_jpeg=b"x"))
         await wait_for(lambda: manager.tampering("cam-1") is not None)
         tampered = manager.tampering("cam-1")
-        sink.publish_event(CameraRestoredEvent(event=covered))
+        sink.publish_event(IncidentEndedEvent(event=covered))
         await wait_for(lambda: manager.tampering("cam-1") is None)
         await manager.stop_all()
 

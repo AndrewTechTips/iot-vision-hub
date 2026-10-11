@@ -29,7 +29,6 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from vision_hub.core.logging import get_logger
 from vision_hub.core.security import utc_now
-from vision_hub.domain.motion import EventKind
 from vision_hub.domain.notifications import Alert, NotificationError
 from vision_hub.domain.push import PushSubscription, PushSubscriptionRepository, PushTestResult
 
@@ -282,7 +281,10 @@ class WebPushNotifier:
             "duration_seconds": duration,
             "person": event.person,
             # "covered", "blurred" or "moved" when the camera was tampered with, else null
-            "tamper": None if event.kind is EventKind.MOTION else event.kind.value,
+            "tamper": event.kind.value if event.kind.tamper else None,
+            # a zone rule: "lingering" or "crossed", in ``zone``; else null
+            "rule": event.kind.value if event.zone else None,
+            "zone": event.zone,
             "image": self._snapshot_link(event.id) if self._snapshot_link else None,
         }
 

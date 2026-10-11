@@ -401,6 +401,7 @@ export default {
             snapshot_at: null,
             alert: true,
             kind: message.data.kind ?? "motion",
+            zone: message.data.zone ?? null,
             missed: message.replay,
           });
           return;
@@ -415,6 +416,7 @@ export default {
               person_at: null,
               snapshot_at: null,
               kind: message.data.kind ?? "motion",
+              zone: message.data.zone ?? null,
               missed: message.replay,
             }),
             id,

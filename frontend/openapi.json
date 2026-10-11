@@ -3222,7 +3222,9 @@
           "motion",
           "covered",
           "blurred",
-          "moved"
+          "moved",
+          "lingering",
+          "crossed"
         ],
         "title": "EventKind",
         "description": "What an event is: motion, or the camera being tampered with (vision/tamper.py)."
@@ -3239,7 +3241,19 @@
           },
           "kind": {
             "$ref": "#/components/schemas/EventKind",
-            "description": "\"motion\", or the camera being tampered with: \"covered\", \"blurred\", \"moved\""
+            "description": "\"motion\"; the camera tampered with: \"covered\", \"blurred\", \"moved\"; a zone rule on people: \"lingering\", \"crossed\""
+          },
+          "zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone",
+            "description": "The zone a zone rule fired in"
           },
           "started_at": {
             "type": "string",
@@ -3374,6 +3388,7 @@
           "id",
           "device_id",
           "kind",
+          "zone",
           "started_at",
           "ended_at",
           "duration_seconds",
@@ -4542,7 +4557,20 @@
           "kind": {
             "$ref": "#/components/schemas/EventKind",
             "default": "motion",
-            "description": "\"motion\", or the camera being tampered with: \"covered\", \"blurred\", \"moved\""
+            "description": "\"motion\"; the camera tampered with: \"covered\", \"blurred\", \"moved\"; a zone rule on people: \"lingering\", \"crossed\""
+          },
+          "zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The zone a zone rule fired in",
+            "title": "Zone"
           },
           "ended_at": {
             "anyOf": [
@@ -4604,6 +4632,7 @@
           "event_id",
           "started_at",
           "kind",
+          "zone",
           "ended_at",
           "peak_area_ratio",
           "motion_frames",
@@ -4670,13 +4699,27 @@
           "kind": {
             "$ref": "#/components/schemas/EventKind",
             "default": "motion",
-            "description": "\"motion\", or the camera being tampered with: \"covered\", \"blurred\", \"moved\""
+            "description": "\"motion\"; the camera tampered with: \"covered\", \"blurred\", \"moved\"; a zone rule on people: \"lingering\", \"crossed\""
+          },
+          "zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The zone a zone rule fired in",
+            "title": "Zone"
           }
         },
         "required": [
           "event_id",
           "started_at",
-          "kind"
+          "kind",
+          "zone"
         ],
         "title": "MotionStartedData",
         "type": "object"

@@ -17,9 +17,12 @@
  */
 
 /**
- * What the hub detected on one frame: boxes as fractions of the picture, and the person score
- * once the open event found a person (else null).
- * @typedef {{ boxes: [x: number, y: number, width: number, height: number][], person: number | null }} Detections
+ * What the hub detected on one frame: motion boxes as fractions of the picture; the person score
+ * once the open event found a person (else null); and the tracked objects, each with its id and
+ * its person score (null: not a person, as far as anyone checked). Older hubs send no tracks.
+ * @typedef {[x: number, y: number, width: number, height: number]} Box
+ * @typedef {[x: number, y: number, width: number, height: number, id: number, person: number | null]} Track
+ * @typedef {{ boxes: Box[], person: number | null, tracks: Track[] }} Detections
  */
 
 const CRLF2 = [13, 10, 13, 10];
@@ -75,12 +78,18 @@ export function parseDetections(header) {
   const line = /^x-detections:[ \t]*(.+)$/im.exec(header);
   if (!line) return null;
   try {
-    const { boxes, person } = JSON.parse(line[1]);
+    const { boxes, person, tracks = [] } = JSON.parse(line[1]);
     const isBox = (/** @type {unknown} */ box) =>
       Array.isArray(box) && box.length === 4 && box.every(Number.isFinite);
+    const isTrack = (/** @type {unknown} */ track) =>
+      Array.isArray(track) &&
+      track.length === 6 &&
+      track.slice(0, 5).every(Number.isFinite) &&
+      (track[5] === null || Number.isFinite(track[5]));
     if (!Array.isArray(boxes) || !boxes.every(isBox)) return null;
+    if (!Array.isArray(tracks) || !tracks.every(isTrack)) return null;
     if (person !== null && !Number.isFinite(person)) return null;
-    return { boxes, person };
+    return { boxes, person, tracks };
   } catch {
     return null;
   }

@@ -113,6 +113,8 @@ export function openLightbox({ items, index, refresh, onClose }) {
         ? `up to ${Math.round(event.peak_area_ratio * 100)} % of the frame`
         : null,
       event.person ? "a person was seen" : event.person === false ? "nobody seen" : null,
+      event.kind === "lingering" ? `someone stayed in ${event.zone}` : null,
+      event.kind === "crossed" ? `someone crossed ${event.zone}` : null,
       tamperOf(event.kind)
         ? `the camera was ${TAMPER[/** @type {import("./tamper.js").TamperKind} */ (event.kind)].done}`
         : null,

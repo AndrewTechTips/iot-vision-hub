@@ -161,7 +161,7 @@ def _export_demo(devices: Path, output: Path) -> None:
     for camera in summary:
         sys.stdout.write(
             f"  {camera.camera}: {camera.events} events per loop ({camera.people} with a person), "
-            f"{camera.frames} analysed frames\n"
+            f"{camera.incidents} zone incidents, {camera.frames} analysed frames\n"
         )
 
 

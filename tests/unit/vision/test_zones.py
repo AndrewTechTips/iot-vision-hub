@@ -81,6 +81,16 @@ class TestAreas:
         assert quiet == []
         assert [type(c) for c in loud] == [ZoneStarted]
 
+    def test_feet_on_the_bottom_edge_are_in_an_area_drawn_to_it(self) -> None:
+        watcher = watch([DOORSTEP])
+        close_up = TrackView(  # walked up to the camera: the box ends at the picture's edge
+            id=1, box=BoundingBox(400, 100, 200, 380), person=0.9, still=False, since=T0
+        )
+
+        changes = [c for tenth in range(60) for c in watcher.update([close_up], at(tenth / 10))]
+
+        assert [type(c) for c in changes] == [ZoneStarted]
+
     def test_closing_ends_lingering(self) -> None:
         watcher = watch([DOORSTEP])
         for tenth in range(60):

@@ -7,7 +7,11 @@ area from behind does not count, a foot inside it does.
 * **Area** — occupied while anyone stands in it. Lingering starts once it has been occupied for
   ``dwell_seconds`` (from when it became occupied) and ends once it has been empty for a moment.
   It counts presence, not a track's id: if tracking swaps ids as someone walks up to the camera,
-  the clock keeps running.
+  the clock keeps running. It ends a few seconds after they leave: the spot they stood on, long
+  enough for the background model to take them in, reads as motion until it catches up again.
+  (Not learning the background under a still person would avoid that, but then they would read
+  as motion all the while, and someone sitting for an hour would start a new event, and alert,
+  every two minutes.)
 * **Line** — crossed when a track's feet move from one side to the other between two frames. The
   same track crossing back and forth within a few seconds counts once.
 """
@@ -140,7 +144,11 @@ class ZoneWatcher:
         return changes
 
     def _normalise(self, point: tuple[float, float]) -> Point:
-        return (point[0] / self._width, point[1] / self._height)
+        """As a share of the picture, kept just inside it: someone walking up to the camera has
+        their feet on its bottom edge, and an area drawn to that edge must contain them."""
+        x = min(max(point[0], 0.0), self._width - 1)
+        y = min(max(point[1], 0.0), self._height - 1)
+        return (x / self._width, y / self._height)
 
 
 def contains(polygon: Sequence[Point], point: Point) -> bool:

@@ -10,8 +10,8 @@ from vision_hub.core.metrics import Metrics
 from vision_hub.core.security import utc_now
 from vision_hub.domain.events import (
     CameraEvent,
-    CameraRestoredEvent,
-    CameraTamperedEvent,
+    IncidentEndedEvent,
+    IncidentStartedEvent,
     MotionEndedEvent,
     MotionStartedEvent,
     topic_for,
@@ -447,10 +447,10 @@ class TestOutbox:
 
 
 class TestTampering:
-    def tampered(self, hub: Harness, event_id: str = "t1") -> CameraTamperedEvent:
+    def tampered(self, hub: Harness, event_id: str = "t1") -> IncidentStartedEvent:
         event = MotionEvent(id=event_id, device_id="porch", started_at=T0, kind=EventKind.COVERED)
         hub.events[event_id] = event
-        return CameraTamperedEvent(event=event, snapshot_jpeg=b"dark")
+        return IncidentStartedEvent(event=event, snapshot_jpeg=b"dark")
 
     async def test_a_tampered_camera_alerts_at_once(self, hub: Harness) -> None:
         notifier = FakeNotifier()
@@ -470,7 +470,7 @@ class TestTampering:
         alerts = hub.service(notifier, clock=Clock())
 
         await alerts.handle(hub.ended("porch", "e1"))
-        await alerts.handle_tamper(self.tampered(hub))  # same device, same moment
+        await alerts.handle_incident(self.tampered(hub))  # same device, same moment
         await alerts.stop()
 
         assert sorted(a.event.id for a in notifier.sent) == ["e1", "t1"]
@@ -481,7 +481,7 @@ class TestTampering:
         await alerts.start()
 
         restored = replace(self.tampered(hub).event, ended_at=T0)
-        hub.publish(CameraRestoredEvent(event=restored))
+        hub.publish(IncidentEndedEvent(event=restored))
         await settle()
         await alerts.stop()
 

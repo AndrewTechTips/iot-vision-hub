@@ -10,6 +10,7 @@ from vision_hub.domain.motion import BoundingBox
 from vision_hub.infra.auth import InMemoryTicketStore
 from vision_hub.realtime.mjpeg import BOUNDARY, MEDIA_TYPE, detections, mjpeg_stream, part
 from vision_hub.vision.bridge import FramePacket, LatestFrame
+from vision_hub.vision.tracking import TrackView
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
 USER = Principal("admin", Role.ADMIN)
@@ -49,11 +50,28 @@ class TestMjpeg:
             person=0.8731,
         )
 
-        assert detections(moving) == '{"boxes":[[0.5,0.25,0.1,0.5]],"person":0.87}'
+        assert detections(moving) == ('{"boxes":[[0.5,0.25,0.1,0.5]],"person":0.87,"tracks":[]}')
         assert detections(replace(moving, person=None)) == (
-            '{"boxes":[[0.5,0.25,0.1,0.5]],"person":null}'
+            '{"boxes":[[0.5,0.25,0.1,0.5]],"person":null,"tracks":[]}'
         )
-        assert detections(replace(moving, boxes=())) == '{"boxes":[],"person":0.87}'
+        assert detections(replace(moving, boxes=())) == ('{"boxes":[],"person":0.87,"tracks":[]}')
+
+    def test_tracks_carry_their_id_and_person_score(self) -> None:
+        still = TrackView(
+            id=7,
+            box=BoundingBox(x=64, y=48, width=128, height=240),
+            person=0.912,
+            still=True,
+            since=T0,
+        )
+        thing = replace(still, id=8, person=None, still=False)
+
+        found = detections(replace(packet(1), width=640, height=480, tracks=(still, thing)))
+
+        assert found == (
+            '{"boxes":[],"person":null,"tracks":'
+            "[[0.1,0.1,0.2,0.5,7,0.91],[0.1,0.1,0.2,0.5,8,null]]}"
+        )
 
     def test_frames_without_detections_have_no_header(self) -> None:
         assert detections(packet(1)) is None
@@ -66,7 +84,7 @@ class TestMjpeg:
         first = await anext(stream)
         await stream.aclose()
 
-        assert b'X-Detections: {"boxes":[[0.0,0.0,0.5,0.5]],"person":null}\r\n' in first
+        assert b'X-Detections: {"boxes":[[0.0,0.0,0.5,0.5]],"person":null,"tracks":[]}\r\n' in first
 
     async def test_stream_ends_when_frames_are_closed(self) -> None:
         frames = LatestFrame()

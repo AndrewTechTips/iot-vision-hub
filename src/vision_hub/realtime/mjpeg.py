@@ -13,6 +13,7 @@ import json
 import time
 from collections.abc import AsyncGenerator, Callable
 
+from vision_hub.domain.motion import BoundingBox
 from vision_hub.vision.bridge import FramePacket, FramesClosedError, LatestFrame
 
 BOUNDARY = "frame"
@@ -31,23 +32,30 @@ def part(jpeg: bytes, detections: str | None = None) -> bytes:
 def detections(packet: FramePacket) -> str | None:
     """Compact JSON of a frame's detections, or None when there is nothing to draw.
 
-    ``{"boxes": [[x, y, width, height], ...], "person": 0.87}``: boxes in fractions of the
-    picture (0..1), ``person`` the score once a person was found in the open event, else null.
+    ``{"boxes": [[x, y, w, h], ...], "person": 0.87, "tracks": [[x, y, w, h, id, 0.91], ...]}``:
+    boxes in fractions of the picture (0..1); ``person`` the score once a person was found in
+    the open event, else null; ``tracks`` the tracked objects, each with its id and its person
+    score (null: not a person, as far as anyone checked).
     """
-    if not packet.boxes and packet.person is None:
+    if not packet.boxes and packet.person is None and not packet.tracks:
         return None
     width, height = packet.width, packet.height
-    boxes = [
-        [
+
+    def fractions(box: BoundingBox) -> list[float]:
+        return [
             round(box.x / width, 4),
             round(box.y / height, 4),
             round(box.width / width, 4),
             round(box.height / height, 4),
         ]
-        for box in packet.boxes
-    ]
+
     person = None if packet.person is None else round(packet.person, 2)
-    return json.dumps({"boxes": boxes, "person": person}, separators=(",", ":"))
+    tracks = [
+        [*fractions(t.box), t.id, None if t.person is None else round(t.person, 2)]
+        for t in packet.tracks
+    ]
+    found = {"boxes": [fractions(box) for box in packet.boxes], "person": person, "tracks": tracks}
+    return json.dumps(found, separators=(",", ":"))
 
 
 async def mjpeg_stream(

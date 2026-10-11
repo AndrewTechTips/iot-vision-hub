@@ -47,9 +47,17 @@ class EventKind(StrEnum):
     """What an event is: motion, or the camera being tampered with (vision/tamper.py)."""
 
     MOTION = "motion"
+    # The camera tampered with (vision/tamper.py)
     COVERED = "covered"
     BLURRED = "blurred"
     MOVED = "moved"
+    # Zone rules on people (vision/zones.py)
+    LINGERING = "lingering"
+    CROSSED = "crossed"
+
+    @property
+    def tamper(self) -> bool:
+        return self in {EventKind.COVERED, EventKind.BLURRED, EventKind.MOVED}
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,3 +78,4 @@ class MotionEvent:
     person_at: datetime | None = None  # when the frame the person was found on was captured
     alert: bool = True  # False when the camera alerts on people only and none was seen
     kind: EventKind = EventKind.MOTION
+    zone: str | None = None  # the zone a zone rule fired in

@@ -2,13 +2,15 @@
 // Cameras that alert on people only toast once the event is over, and only if a person was
 // seen (the hub decides: `alert` on the ended event). Events replayed after a reconnect are
 // summed up in a single toast instead of one each.
-// A camera covered, blurred or moved alerts at once, in red, until it is back to normal.
+// A camera covered, blurred or moved alerts at once, in red, until it is back to normal; so do
+// zone rules: someone lingering (until they leave) and a line crossed.
 // In a background tab, the page title counts unseen alerts: "(2) Live – Vision Hub".
 
 import { getEvent, snapshotUrl } from "../api/events.js";
 import { alertsOn, deviceName } from "../state/devices.js";
 import { formatClock, formatDuration } from "../ui/time.js";
 import { TAMPER, tamperOf } from "../ui/tamper.js";
+import { zoneRuleOf } from "../ui/zone-rules.js";
 import { dismissToast, toast } from "../ui/toast.js";
 
 /** @typedef {import("../api/types.js").MessageOf<"motion.started">} MotionStarted */
@@ -32,6 +34,11 @@ export function startAlerts(realtime, { navigate }) {
   const stop = realtime.listen((message) => {
     switch (message.type) {
       case "motion.started":
+        if (zoneRuleOf(message.data.kind)) {
+          if (message.replay) missed += 1;
+          else zoneStarted(message);
+          return;
+        }
         if (tamperOf(message.data.kind)) {
           if (message.replay) missed += 1;
           else tampered(message);
@@ -43,6 +50,10 @@ export function startAlerts(realtime, { navigate }) {
         else started(message);
         return;
       case "motion.ended":
+        if (zoneRuleOf(message.data.kind)) {
+          if (message.data.kind === "lingering") zoneLeft(message);
+          return;
+        }
         if (tamperOf(message.data.kind)) {
           restored(message);
           return;
@@ -76,6 +87,51 @@ export function startAlerts(realtime, { navigate }) {
       action: { label: "Watch", run: () => navigate(`/devices/${encodeURIComponent(device)}`) },
     });
     attention.bump();
+  }
+
+  /** A zone rule fired: someone lingering (until they leave), or a line crossed.
+   * @param {MotionStarted} message */
+  function zoneStarted(message) {
+    const device = message.device_id;
+    const zone = message.data.zone ?? "a zone";
+    const id = message.data.event_id;
+    const lingering = message.data.kind === "lingering";
+    toast({
+      key: `zone:${device}:${zone}`,
+      tone: "alarm",
+      title: lingering ? `Someone lingering at ${deviceName(device)}` : `Someone crossed ${zone}`,
+      message: lingering
+        ? `In ${zone} since ${formatClock(message.data.started_at)}.`
+        : `At ${deviceName(device)}, ${formatClock(message.data.started_at)}.`,
+      duration: lingering ? 0 : ENDED_MS, // lingering stays until they leave
+      action: lingering
+        ? { label: "Watch", run: () => navigate(`/devices/${encodeURIComponent(device)}`) }
+        : { label: "View", run: () => navigate(`/events?event=${encodeURIComponent(id)}`) },
+    });
+    attention.bump();
+  }
+
+  /** @param {MotionEnded} message */
+  function zoneLeft(message) {
+    const device = message.device_id;
+    const zone = message.data.zone ?? "a zone";
+    if (message.replay) {
+      dismissToast(`zone:${device}:${zone}`);
+      return;
+    }
+    const { event_id: id, started_at: start, ended_at: end } = message.data;
+    const stayed = end ? (Date.parse(end) - Date.parse(start)) / 1000 : null;
+    toast({
+      key: `zone:${device}:${zone}`,
+      tone: "signal",
+      title: `${zone} is clear`,
+      message:
+        stayed === null
+          ? `At ${deviceName(device)}.`
+          : `Someone stayed ${formatDuration(stayed)} at ${deviceName(device)}.`,
+      duration: ENDED_MS,
+      action: { label: "View", run: () => navigate(`/events?event=${encodeURIComponent(id)}`) },
+    });
   }
 
   /** A camera tampered with: says so until it is back.

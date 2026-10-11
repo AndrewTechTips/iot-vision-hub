@@ -15,9 +15,9 @@ from vision_hub.core.security import utc_now
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import (
     CameraEvent,
-    CameraRestoredEvent,
-    CameraTamperedEvent,
     DeviceStatusChanged,
+    IncidentEndedEvent,
+    IncidentStartedEvent,
     MotionEndedEvent,
     MotionStartedEvent,
 )
@@ -38,8 +38,10 @@ class MotionStartedData(ApiSchema):
     started_at: datetime
     kind: EventKind = Field(
         default=EventKind.MOTION,
-        description='"motion", or the camera being tampered with: "covered", "blurred", "moved"',
+        description='"motion"; the camera tampered with: "covered", "blurred", "moved"; '
+        'a zone rule on people: "lingering", "crossed"',
     )
+    zone: str | None = Field(default=None, description="The zone a zone rule fired in")
 
 
 class MotionEndedData(MotionStartedData):
@@ -160,16 +162,19 @@ def to_message(event: CameraEvent) -> ServerMessage:
             )
         # Tampering travels as an event of its kind: clients that only know motion still see
         # it start and end, and replay after a reconnect works the same.
-        case MotionStartedEvent(event=motion) | CameraTamperedEvent(event=motion):
+        case MotionStartedEvent(event=motion) | IncidentStartedEvent(event=motion):
             return MotionStartedMessage(
                 device_id=motion.device_id,
                 data=MotionStartedData(
-                    event_id=motion.id, started_at=motion.started_at, kind=motion.kind
+                    event_id=motion.id,
+                    started_at=motion.started_at,
+                    kind=motion.kind,
+                    zone=motion.zone,
                 ),
             )
         case MotionEndedEvent(event=motion):
             return _ended(motion, event.boxes)
-        case CameraRestoredEvent(event=motion):
+        case IncidentEndedEvent(event=motion):
             return _ended(motion, ())
         case _:  # pragma: no cover - mypy proves the match is exhaustive
             assert_never(event)
@@ -192,6 +197,7 @@ def _ended(
             person_confidence=motion.person_confidence,
             alert=motion.alert,
             kind=motion.kind,
+            zone=motion.zone,
         ),
     )
 
@@ -204,7 +210,10 @@ def replayed_message(record: EventRecord) -> ServerMessage:
             device_id=motion.device_id,
             replay=True,
             data=MotionStartedData(
-                event_id=motion.id, started_at=motion.started_at, kind=motion.kind
+                event_id=motion.id,
+                started_at=motion.started_at,
+                kind=motion.kind,
+                zone=motion.zone,
             ),
         )
     return _ended(motion, record.boxes, replay=True)

@@ -17,6 +17,8 @@ import { icon } from "../ui/icons.js";
 import { liveView } from "../ui/live-view.js";
 import { pageHeader } from "../ui/page.js";
 import { describeAreas, roiEditor } from "../ui/roi-editor.js";
+import { describeZones, zoneEditor } from "../ui/zone-editor.js";
+import { zoneRuleOf } from "../ui/zone-rules.js";
 import { tamperOf } from "../ui/tamper.js";
 import { formatClock, formatDuration, timeAgo } from "../ui/time.js";
 import { toast } from "../ui/toast.js";
@@ -83,6 +85,12 @@ export default {
       });
       const view = liveView({ device, host: stage });
       const areasText = h("p", { class: "text-sm text-haze" });
+      const zonesText = h("p", { class: "text-sm text-haze" });
+      const editZones = h("button", {
+        class: "btn btn-secondary btn-sm",
+        attrs: { type: "button", "aria-pressed": "false" },
+        text: "Edit zones",
+      });
       const editAreas = h("button", {
         class: "btn btn-secondary btn-sm",
         attrs: { type: "button", "aria-pressed": "false" },
@@ -102,6 +110,14 @@ export default {
           renderDraft();
         },
       });
+      const zones = zoneEditor({
+        surface: view.element,
+        zones: device.detection.zones ?? [],
+        onChange: (next) => {
+          draft = { ...draft, zones: next };
+          renderDraft();
+        },
+      });
       stage.append(
         view.element,
         h(
@@ -110,7 +126,7 @@ export default {
           h(
             "div",
             { class: "flex flex-wrap items-center justify-between gap-3" },
-            areasText,
+            h("div", { class: "grid gap-0.5" }, areasText, zonesText),
             h(
               "div",
               { class: "flex flex-wrap items-center gap-4" },
@@ -124,9 +140,11 @@ export default {
                 "Motion boxes",
               ),
               admin ? editAreas : null,
+              admin ? editZones : null,
             ),
           ),
           admin ? roi.toolbar : null,
+          admin ? zones.toolbar : null,
         ),
       );
       view.setVisible(true);
@@ -171,7 +189,7 @@ export default {
         form = detectionForm({
           config: draft,
           onChange: (config) => {
-            draft = { ...config, roi: draft.roi };
+            draft = { ...config, roi: draft.roi, zones: draft.zones };
             renderDraft();
           },
         });
@@ -267,6 +285,7 @@ export default {
         save.disabled = !changed;
         reset.hidden = !changed;
         areasText.textContent = describeAreas(draft.roi);
+        zonesText.textContent = describeZones(draft.zones ?? []);
       }
 
       // ── Recent events and patterns ──────────────────────
@@ -402,12 +421,17 @@ export default {
         }
       });
 
-      editAreas.addEventListener("click", () => {
-        const on = !roi.editing;
-        roi.setEditing(on);
-        editAreas.textContent = on ? "Done" : "Edit areas";
-        editAreas.setAttribute("aria-pressed", String(on));
-      });
+      /** One editor at a time: both draw on the picture. */
+      function editing(/** @type {"areas" | "zones" | null} */ which) {
+        roi.setEditing(which === "areas");
+        zones.setEditing(which === "zones");
+        editAreas.textContent = which === "areas" ? "Done" : "Edit areas";
+        editAreas.setAttribute("aria-pressed", String(which === "areas"));
+        editZones.textContent = which === "zones" ? "Done" : "Edit zones";
+        editZones.setAttribute("aria-pressed", String(which === "zones"));
+      }
+      editAreas.addEventListener("click", () => editing(roi.editing ? null : "areas"));
+      editZones.addEventListener("click", () => editing(zones.editing ? null : "zones"));
 
       save.addEventListener("click", async () => {
         save.setAttribute("aria-busy", "true");
@@ -417,6 +441,7 @@ export default {
           draft = structuredClone(device.detection);
           form?.set(draft);
           roi.set(draft.roi);
+          zones.set(draft.zones ?? []);
           renderDraft();
           toast({
             tone: "signal",
@@ -440,6 +465,7 @@ export default {
         draft = structuredClone(device.detection);
         form?.set(draft);
         roi.set(draft.roi);
+        zones.set(draft.zones ?? []);
         renderDraft();
       });
 
@@ -459,6 +485,16 @@ export default {
             };
             view.setStatus(message.data.status);
             renderDevice();
+          } else if (zoneRuleOf(message.data.kind) && message.data.zone) {
+            // A zone lights up while its rule fires (a crossed line, for a moment).
+            const zone = message.data.zone;
+            const lingering = message.data.kind === "lingering";
+            if (message.type === "motion.started") {
+              zones.setActive(zone, true);
+              if (!lingering) setTimeout(() => zones.setActive(zone, false), 2_500);
+            } else if (lingering) {
+              zones.setActive(zone, false);
+            }
           } else if (message.type === "motion.started" && tamperOf(message.data.kind)) {
             view.setTamper(tamperOf(message.data.kind));
           } else if (message.type === "motion.ended" && tamperOf(message.data.kind)) {
@@ -477,6 +513,7 @@ export default {
         }),
         () => clearTimeout(refreshRecent),
         () => roi.destroy(),
+        () => zones.destroy(),
         () => view.destroy(),
         onBoxesChange((shown) => (boxesSwitch.checked = shown)),
       );

@@ -31,8 +31,10 @@ class EventOut(ApiSchema):
     id: str
     device_id: str
     kind: EventKind = Field(
-        description='"motion", or the camera being tampered with: "covered", "blurred", "moved"'
+        description='"motion"; the camera tampered with: "covered", "blurred", "moved"; '
+        'a zone rule on people: "lingering", "crossed"'
     )
+    zone: str | None = Field(description="The zone a zone rule fired in")
     started_at: datetime
     ended_at: datetime | None
     duration_seconds: float | None
@@ -90,6 +92,7 @@ class EventOut(ApiSchema):
             id=event.id,
             device_id=event.device_id,
             kind=event.kind,
+            zone=event.zone,
             started_at=event.started_at,
             ended_at=event.ended_at,
             duration_seconds=duration,

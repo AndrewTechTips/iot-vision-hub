@@ -192,6 +192,7 @@ def _new_row(event: MotionEvent) -> MotionEventRow:
         person_confidence=event.person_confidence,
         alert=event.alert,
         kind=event.kind.value,
+        zone=event.zone,
         boxes=[],
         snapshots=[],
     )
@@ -211,6 +212,7 @@ def _to_record(row: MotionEventRow) -> EventRecord:
             person_at=row.person_at,
             alert=row.alert,
             kind=EventKind(row.kind),
+            zone=row.zone,
         ),
         boxes=tuple(BoundingBox(**box) for box in row.boxes),
         snapshots={

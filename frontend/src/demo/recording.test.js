@@ -5,8 +5,8 @@ import { detectionsAt, passed, uuid7 } from "./recording.js";
 /** @type {import("./recording.js").RecordedCamera["frames"]} */
 const FRAMES = [
   [0, null],
-  [0.1, { boxes: [[0.1, 0.1, 0.2, 0.2]], person: null }],
-  [0.2, { boxes: [[0.2, 0.1, 0.2, 0.2]], person: 0.9 }],
+  [0.1, { boxes: [[0.1, 0.1, 0.2, 0.2]], person: null, tracks: [] }],
+  [0.2, { boxes: [[0.2, 0.1, 0.2, 0.2]], person: 0.9, tracks: [] }],
 ];
 
 describe("detectionsAt", () => {

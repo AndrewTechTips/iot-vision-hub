@@ -32,6 +32,7 @@ class TrackerSettings:
     hold_seconds: float = 4.0  # a still person is kept this long without being seen again
     confirm_seconds: float = 2.0  # how often to look again at a still person
     min_hits: int = 2  # frames an object needs before it is shown
+    max_looks: int = 3  # person checks an object gets; still nobody: it is just motion
     history_seconds: float = 3.0  # how far back a late person check can be matched
 
 
@@ -63,6 +64,7 @@ class _Track:
     body_anchor: tuple[float, float] | None = None  # ...and the motion's centre at that time
     confirmed: datetime | None = None
     seen_moving: datetime | None = None  # the last frame it had motion on
+    looks: int = 0  # person checks that ran while it was shown and found nobody in it
     history: deque[tuple[datetime, BoundingBox]] = field(default_factory=deque)
 
     def box(self) -> BoundingBox:
@@ -175,10 +177,27 @@ class Tracker:
                 self._next_id += 1
                 self._tracks.append(track)
             matched.add(track.id)
+        for track in self._tracks:
+            if (
+                track.id not in matched
+                and track.person is None
+                and track.hits >= self._settings.min_hits
+            ):
+                track.looks += 1
         # A still person the check did not find has left.
         self._tracks = [
             t for t in self._tracks if t.id in matched or t.person is None or not self._still(t, at)
         ]
+
+    def wants_check(self, at: datetime) -> bool:
+        """Whether a person check would help: a still person to look at again, or a shown
+        object that has not been looked at enough to tell whether it is someone."""
+        return self.needs_check(at) or any(
+            t.person is None
+            and t.hits >= self._settings.min_hits
+            and t.looks < self._settings.max_looks
+            for t in self._tracks
+        )
 
     def needs_check(self, at: datetime) -> bool:
         """Whether a still person is due to be looked at again."""

@@ -61,10 +61,10 @@ export async function startDemoHub() {
           type: "motion.started",
           device_id: camera.id,
           replay: false,
-          data: { event_id: id, started_at: startedAt, kind: "motion" },
+          data: { event_id: id, started_at: startedAt, kind: "motion", zone: null },
         });
       },
-      tampered(camera, event) {
+      incidentStarted(camera, event) {
         events.unshift(event);
         broadcast({
           v: 1,
@@ -72,10 +72,15 @@ export async function startDemoHub() {
           type: "motion.started",
           device_id: camera.id,
           replay: false,
-          data: { event_id: event.id, started_at: event.started_at, kind: event.kind },
+          data: {
+            event_id: event.id,
+            started_at: event.started_at,
+            kind: event.kind,
+            zone: event.zone,
+          },
         });
       },
-      restored(camera, event) {
+      incidentEnded(camera, event) {
         const index = events.findIndex((item) => item.id === event.id);
         if (index >= 0) events[index] = event;
         broadcast({
@@ -459,5 +464,6 @@ export function endedData(event) {
     person_confidence: event.person_confidence,
     alert: event.alert,
     kind: event.kind,
+    zone: event.zone,
   };
 }

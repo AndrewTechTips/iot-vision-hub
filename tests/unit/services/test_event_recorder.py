@@ -9,9 +9,9 @@ from vision_hub.core.metrics import Metrics
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import (
     CameraEvent,
-    CameraRestoredEvent,
-    CameraTamperedEvent,
     DeviceStatusChanged,
+    IncidentEndedEvent,
+    IncidentStartedEvent,
     MotionEndedEvent,
     MotionStartedEvent,
     VideoClip,
@@ -191,15 +191,15 @@ async def test_tampering_is_stored_with_its_picture_then_ended(
     events.start()
     covered = replace(MOTION, id="evt-9", ended_at=None, kind=EventKind.COVERED)
 
-    events.submit(CameraTamperedEvent(event=covered, snapshot_jpeg=b"dark", thumbnail_jpeg=b"t"))
-    events.submit(CameraRestoredEvent(event=replace(covered, ended_at=covered.started_at)))
+    events.submit(IncidentStartedEvent(event=covered, snapshot_jpeg=b"dark", thumbnail_jpeg=b"t"))
+    events.submit(IncidentEndedEvent(event=replace(covered, ended_at=covered.started_at)))
     await events.stop()
 
     assert log == [
         "stored end evt-9",  # stored open, with its picture
-        "published CameraTamperedEvent",
+        "published IncidentStartedEvent",
         "ended evt-9",
-        "published CameraRestoredEvent",
+        "published IncidentEndedEvent",
     ]
     [(stored, snapshots)] = repository.completed
     assert stored.ended_at is None

@@ -6,7 +6,8 @@ event loop (AD-7). OpenCV releases the GIL inside its C++ calls, so cameras run 
 
 import threading
 import uuid
-from collections.abc import Callable
+from collections import deque
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Protocol
@@ -20,21 +21,27 @@ from vision_hub.core.security import utc_now
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import (
     CameraEvent,
-    CameraRestoredEvent,
-    CameraTamperedEvent,
     DeviceStatusChanged,
+    IncidentEndedEvent,
+    IncidentStartedEvent,
     MotionEndedEvent,
     MotionStartedEvent,
     VideoClip,
 )
-from vision_hub.domain.motion import EventKind, MotionEvent
-from vision_hub.vision.annotate import draw_boxes
+from vision_hub.domain.motion import BoundingBox, EventKind, MotionEvent
+from vision_hub.vision.annotate import RED, RED_DIM, draw_boxes, draw_zone
 from vision_hub.vision.bridge import FramePacket
 from vision_hub.vision.clip import ClipRecorder, ClipSettings
 from vision_hub.vision.config import DetectionConfig
 from vision_hub.vision.detector import MotionDetector
 from vision_hub.vision.frame import Frame, resize_to_width
-from vision_hub.vision.persons import EventCheck, PersonChecker, PersonVerdict, should_alert
+from vision_hub.vision.persons import (
+    EventCheck,
+    Person,
+    PersonChecker,
+    PersonVerdict,
+    should_alert,
+)
 from vision_hub.vision.sources import (
     Backoff,
     FrameSource,
@@ -44,10 +51,13 @@ from vision_hub.vision.sources import (
 )
 from vision_hub.vision.tamper import TamperEnded, TamperMonitor, TamperStarted
 from vision_hub.vision.tracker import MotionEnded, MotionStarted, MotionTracker
+from vision_hub.vision.tracking import Tracker, TrackView
+from vision_hub.vision.zones import ZoneEnded, ZoneRule, ZoneStarted, ZoneWatcher
 
 logger = get_logger(__name__)
 
 IDLE_SNAPSHOT_INTERVAL = timedelta(seconds=1)
+LOOKS_PAUSE = timedelta(minutes=1)  # tracking checks rest this long after the model failed
 
 
 class WorkerSink(Protocol):
@@ -105,6 +115,15 @@ class CameraWorker:
         self._person_check: EventCheck | None = None  # of the open event
         self._tamper = TamperMonitor() if detection.tamper_alerts else None
         self._tampered: MotionEvent | None = None  # the open tamper event
+        self._detection = detection
+        # Object tracking and zone rules (made on the first frame, which gives the size)
+        self._objects: Tracker | None = None
+        self._zones: ZoneWatcher | None = None
+        self._zone_events: dict[str, MotionEvent] = {}  # open zone events by zone name
+        self._people: deque[tuple[list[Person], datetime]] = deque()  # from the checker thread
+        self._looking = False  # a tracking check is running
+        self._last_look: datetime | None = None
+        self._looks_paused_until: datetime | None = None  # after the model failed
         self._thread: threading.Thread | None = None
         self._sequence = 0
         self._next_due: datetime | None = None
@@ -187,12 +206,15 @@ class CameraWorker:
             logger.info("motion_started", event_id=update.event.id)
             self._sink.publish_event(MotionStartedEvent(event=update.event))
             self._clip_step(lambda clip: clip.start())
-            self._person_check = self._persons.event(at) if self._persons else None
+            self._person_check = (
+                self._persons.event(at, self._people_seen) if self._persons else None
+            )
         self._clip_step(lambda clip: clip.add(frame, at))
         if self._person_check is not None:
             self._person_check.offer(frame, at)
         if isinstance(update, MotionEnded):
             self._publish_motion_ended(update, self._finish_clip())
+        tracks = self._follow(frame, detection.boxes, at)
 
         # Encode every frame for live viewers; otherwise just keep the snapshot fresh.
         idle_due = self._last_streamed is None or at - self._last_streamed >= IDLE_SNAPSHOT_INTERVAL
@@ -213,8 +235,97 @@ class CameraWorker:
                     jpeg=jpeg,
                     boxes=tuple(box.scaled(scale) for box in detection.boxes),
                     person=self._person_found(),
+                    tracks=tuple(replace(t, box=t.box.scaled(scale)) for t in tracks),
                 )
             )
+
+    def _follow(self, frame: Frame, boxes: Sequence[BoundingBox], at: datetime) -> list[TrackView]:
+        """Tracks objects, labels people with whatever person checks found, asks for a check
+        when it would help, and applies the zone rules."""
+        if self._objects is None:
+            height, width = frame.shape[:2]
+            self._objects = Tracker(width)
+            self._zones = ZoneWatcher(self._detection.zones, width, height)
+        while self._people:
+            people, seen_at = self._people.popleft()
+            self._objects.people_seen(people, seen_at)
+            self._last_look = max(self._last_look or seen_at, seen_at)
+        tracks = self._objects.update(boxes, at)
+        self._maybe_look(frame, at)
+        if self._zones is not None and self._zones.active:
+            changes = self._zones.update(tracks, at, anyone=self._persons is None)
+            for change in changes:
+                self._zone_changed(change, frame, tracks)
+        return tracks
+
+    def _maybe_look(self, frame: Frame, at: datetime) -> None:
+        """A person check outside the motion event's own: for objects nobody has looked at
+        yet, and still people to confirm. At most one at a time, one per check interval."""
+        checker, objects = self._persons, self._objects
+        if checker is None or objects is None or self._looking:
+            return
+        if self._person_check is not None and self._person_check.failed:
+            self._looks_paused_until = at + LOOKS_PAUSE  # the model just failed: rest it
+            return
+        if self._person_check is not None and not self._person_check.over:
+            return  # the motion event's own checks run now, and label tracks too
+        if self._looks_paused_until is not None and at < self._looks_paused_until:
+            return
+        if self._last_look is not None and at - self._last_look < checker.interval:
+            return
+        if not objects.wants_check(at):
+            return
+        self._looking = True
+        self._last_look = at
+        image = frame.copy()
+
+        def look() -> None:
+            try:
+                people = checker.detector.detect(image)
+            except Exception:
+                logger.exception("person_check_failed")
+                self._looks_paused_until = at + LOOKS_PAUSE  # don't hammer a broken model
+                return
+            finally:
+                self._looking = False
+            self._people_seen([p for p in people if p.confidence >= checker.threshold], at)
+
+        checker.submit(look)
+
+    def _people_seen(self, people: Sequence[Person], at: datetime) -> None:
+        """From the checker's thread: handed to the camera thread, which owns the tracker."""
+        self._people.append((list(people), at))
+
+    def _zone_changed(
+        self, change: ZoneStarted | ZoneEnded, frame: Frame, tracks: Sequence[TrackView]
+    ) -> None:
+        if isinstance(change, ZoneStarted):
+            kind = EventKind.LINGERING if change.rule is ZoneRule.LINGERING else EventKind.CROSSED
+            event = MotionEvent(
+                id=str(uuid.uuid7()),
+                device_id=self.device_id,
+                started_at=change.at,
+                kind=kind,
+                zone=change.zone,
+                person=True if self._persons else None,
+            )
+            self._zone_events[change.zone] = event
+            logger.info("zone_rule", zone=change.zone, rule=change.rule.value, event_id=event.id)
+            zone = next(z for z in self._detection.zones if z.name == change.zone)
+            people = [t.box for t in tracks if t.person is not None] or [t.box for t in tracks]
+            annotated = draw_boxes(draw_zone(frame, zone), people, color=RED, outline=RED_DIM)
+            quality = self._encoding.snapshot_jpeg_quality
+            thumbnail, _ = resize_to_width(annotated, self._encoding.thumbnail_width)
+            self._sink.publish_event(
+                IncidentStartedEvent(
+                    event=event,
+                    snapshot_jpeg=_encode(frame, quality),
+                    annotated_jpeg=_encode(annotated, quality),
+                    thumbnail_jpeg=_encode(thumbnail, quality),
+                )
+            )
+        elif (opened := self._zone_events.pop(change.zone, None)) is not None:
+            self._sink.publish_event(IncidentEndedEvent(event=replace(opened, ended_at=change.at)))
 
     def _person_found(self) -> float | None:
         """The open event's best person score, once it counts as a person."""
@@ -318,7 +429,7 @@ class CameraWorker:
                 quality = self._encoding.snapshot_jpeg_quality
                 thumbnail, _ = resize_to_width(frame, self._encoding.thumbnail_width)
                 self._sink.publish_event(
-                    CameraTamperedEvent(
+                    IncidentStartedEvent(
                         event=event,
                         snapshot_jpeg=_encode(frame, quality),
                         thumbnail_jpeg=_encode(thumbnail, quality),
@@ -333,10 +444,15 @@ class CameraWorker:
     def _restore(self, at: datetime) -> None:
         if self._tampered is not None:
             event, self._tampered = replace(self._tampered, ended_at=at), None
-            self._sink.publish_event(CameraRestoredEvent(event=event))
+            self._sink.publish_event(IncidentEndedEvent(event=event))
 
     def _finish(self, *, crashed: bool) -> None:
         self._restore(self._clock())  # a stopped camera is no longer known to be tampered with
+        if self._zones is not None:
+            for change in self._zones.close(self._clock()):
+                if (opened := self._zone_events.pop(change.zone, None)) is not None:
+                    closed = replace(opened, ended_at=change.at)
+                    self._sink.publish_event(IncidentEndedEvent(event=closed))
         try:
             if (ended := self._tracker.close()) is not None:
                 self._publish_motion_ended(ended, self._finish_clip())  # stopped mid-event

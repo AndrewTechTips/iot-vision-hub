@@ -117,9 +117,14 @@ class PersonChecker:
         self.max_checks = max_checks
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="persons")
 
-    def event(self, started_at: datetime) -> EventCheck:
-        """Checks for one motion event; the first is due at once."""
-        return EventCheck(self, started_at)
+    def event(
+        self,
+        started_at: datetime,
+        seen: Callable[[Sequence[Person], datetime], None] | None = None,
+    ) -> EventCheck:
+        """Checks for one motion event; the first is due at once. ``seen`` gets the people
+        each check found (over the threshold) and when their frame was captured."""
+        return EventCheck(self, started_at, seen)
 
     def submit(self, task: Callable[[], None]) -> Future[None]:
         return self._executor.submit(task)
@@ -133,8 +138,14 @@ class EventCheck:
     """The person checks of one event. ``offer`` and ``finish`` are called from the camera
     thread and never wait; the checks themselves run on the checker's thread."""
 
-    def __init__(self, checker: PersonChecker, started_at: datetime) -> None:
+    def __init__(
+        self,
+        checker: PersonChecker,
+        started_at: datetime,
+        seen: Callable[[Sequence[Person], datetime], None] | None = None,
+    ) -> None:
         self._checker = checker
+        self._seen = seen
         self._lock = threading.Lock()
         self._best: float | None = None
         self._found_at: datetime | None = None
@@ -142,6 +153,17 @@ class EventCheck:
         self._checks = 0
         self._due = started_at
         self._pending: Future[None] | None = None
+
+    @property
+    def failed(self) -> bool:
+        """The model could not run for this event."""
+        return self._failed
+
+    @property
+    def over(self) -> bool:
+        """No more checks will run for this event: a person was found, the model failed, or
+        the event had all its checks."""
+        return self.found or self._failed or self._checks >= self._checker.max_checks
 
     @property
     def found(self) -> bool:
@@ -196,6 +218,8 @@ class EventCheck:
                 self._failed = True
             return
         score = people[0].confidence if people else 0.0
+        if self._seen is not None and at is not None:
+            self._seen([p for p in people if p.confidence >= self._checker.threshold], at)
         with self._lock:
             if score >= self._checker.threshold and self._found_at is None:
                 self._found_at = at

@@ -45,18 +45,21 @@ class MotionEndedEvent:
 
 
 @dataclass(frozen=True, slots=True)
-class CameraTamperedEvent:
-    """The camera was covered, blurred or moved (``event.kind``): alerts at once, unlike motion,
-    with the picture as it is now."""
+class IncidentStartedEvent:
+    """Something to alert on at once, unlike motion, with the picture as it is now: the camera
+    covered, blurred or moved, or a zone rule (someone lingering, a line crossed). What it is
+    is ``event.kind``; a zone rule's zone is ``event.zone``."""
 
     event: MotionEvent
     snapshot_jpeg: bytes = field(repr=False)
     thumbnail_jpeg: bytes = field(default=b"", repr=False)
+    annotated_jpeg: bytes = field(default=b"", repr=False)  # zone and person drawn; else none
 
 
 @dataclass(frozen=True, slots=True)
-class CameraRestoredEvent:
-    """The tampering is over (``event.ended_at``), or the camera stopped meanwhile."""
+class IncidentEndedEvent:
+    """The incident is over (``event.ended_at``), or the camera stopped meanwhile. A crossed
+    line ends the moment it starts."""
 
     event: MotionEvent
 
@@ -65,16 +68,16 @@ type CameraEvent = (
     DeviceStatusChanged
     | MotionStartedEvent
     | MotionEndedEvent
-    | CameraTamperedEvent
-    | CameraRestoredEvent
+    | IncidentStartedEvent
+    | IncidentEndedEvent
 )
 
 
 # Topics are "<kind>.<device_id>"; subscribe with globs such as "motion.ended.*".
 MOTION_STARTED = "motion.started"
 MOTION_ENDED = "motion.ended"
-TAMPER_STARTED = "tamper.started"
-TAMPER_ENDED = "tamper.ended"
+INCIDENT_STARTED = "incident.started"
+INCIDENT_ENDED = "incident.ended"
 DEVICE_STATUS = "device.status"
 
 
@@ -86,9 +89,9 @@ def topic_for(event: CameraEvent) -> str:
             return f"{MOTION_STARTED}.{event.event.device_id}"
         case MotionEndedEvent():
             return f"{MOTION_ENDED}.{event.event.device_id}"
-        case CameraTamperedEvent():
-            return f"{TAMPER_STARTED}.{event.event.device_id}"
-        case CameraRestoredEvent():
-            return f"{TAMPER_ENDED}.{event.event.device_id}"
+        case IncidentStartedEvent():
+            return f"{INCIDENT_STARTED}.{event.event.device_id}"
+        case IncidentEndedEvent():
+            return f"{INCIDENT_ENDED}.{event.event.device_id}"
         case _:  # pragma: no cover - mypy proves the match is exhaustive
             assert_never(event)

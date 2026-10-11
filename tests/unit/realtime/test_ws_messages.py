@@ -1,7 +1,7 @@
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
-from vision_hub.domain.events import CameraRestoredEvent, CameraTamperedEvent
+from vision_hub.domain.events import IncidentEndedEvent, IncidentStartedEvent
 from vision_hub.domain.history import EventRecord
 from vision_hub.domain.motion import EventKind, MotionEvent
 from vision_hub.schemas.ws import (
@@ -16,9 +16,9 @@ COVERED = MotionEvent(id="t1", device_id="porch", started_at=T0, kind=EventKind.
 
 
 def test_tampering_travels_as_an_event_of_its_kind() -> None:
-    started = to_message(CameraTamperedEvent(event=COVERED, snapshot_jpeg=b"x"))
+    started = to_message(IncidentStartedEvent(event=COVERED, snapshot_jpeg=b"x"))
     ended = to_message(
-        CameraRestoredEvent(event=replace(COVERED, ended_at=T0 + timedelta(seconds=20)))
+        IncidentEndedEvent(event=replace(COVERED, ended_at=T0 + timedelta(seconds=20)))
     )
 
     assert isinstance(started, MotionStartedMessage)

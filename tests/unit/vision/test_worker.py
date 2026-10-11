@@ -13,16 +13,17 @@ from vision_hub.core.metrics import Metrics
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import (
     CameraEvent,
-    CameraRestoredEvent,
-    CameraTamperedEvent,
     DeviceStatusChanged,
+    IncidentEndedEvent,
+    IncidentStartedEvent,
     MotionEndedEvent,
     MotionStartedEvent,
 )
 from vision_hub.domain.motion import BoundingBox, EventKind
 from vision_hub.vision.bridge import FramePacket
 from vision_hub.vision.clip import ClipRecorder, ClipSettings
-from vision_hub.vision.config import DetectionConfig
+from vision_hub.vision.config import DetectionConfig, Zone
+from vision_hub.vision.demo_export import InlinePersonChecker
 from vision_hub.vision.frame import Frame
 from vision_hub.vision.persons import Person, PersonChecker
 from vision_hub.vision.sources import Backoff, SourceError, SyntheticSource, SyntheticSourceConfig
@@ -412,7 +413,9 @@ class TestPersons:
         assert ended.event.person is True
         assert ended.event.person_confidence == 0.9
         assert ended.event.alert is True
-        assert detector.calls == 2  # found on the second check: no more after that
+        # Found on the second check; tracking may look again afterwards (for objects nobody
+        # has looked at, or to confirm a still person), at most once per interval.
+        assert 2 <= detector.calls <= 4
         # Found on the second check, one interval (1 s) after the event started.
         assert ended.event.person_at is not None
         found_after = (ended.event.person_at - ended.event.started_at).total_seconds()
@@ -572,7 +575,7 @@ class CoveredSource:
 class TamperSink(RecordingSink):
     def publish_event(self, event: CameraEvent) -> None:
         super().publish_event(event)
-        if isinstance(event, CameraRestoredEvent):
+        if isinstance(event, IncidentEndedEvent):
             self.done.set()
 
 
@@ -583,8 +586,8 @@ class TestTampering:
 
         run_until_done(worker, sink, timeout=20)
 
-        [tampered] = [e for e in sink.events if isinstance(e, CameraTamperedEvent)]
-        [restored] = [e for e in sink.events if isinstance(e, CameraRestoredEvent)]
+        [tampered] = [e for e in sink.events if isinstance(e, IncidentStartedEvent)]
+        [restored] = [e for e in sink.events if isinstance(e, IncidentEndedEvent)]
         assert tampered.event.kind is EventKind.COVERED
         assert tampered.event.alert is True
         assert decode(tampered.snapshot_jpeg).max() < 40  # the picture as it is: dark
@@ -603,7 +606,7 @@ class TestTampering:
         deadline.wait(3)
         assert worker.stop(timeout=5)
 
-        assert not any(isinstance(e, CameraTamperedEvent) for e in sink.events)
+        assert not any(isinstance(e, IncidentStartedEvent) for e in sink.events)
 
     def test_stopping_a_tampered_camera_ends_its_tamper_event(self) -> None:
         sink = TamperSink()
@@ -611,10 +614,112 @@ class TestTampering:
         source = CoveredSource(range(150, 10_000))
         worker = make_worker(sink, source=source)
         worker.start()
-        while not any(isinstance(e, CameraTamperedEvent) for e in sink.events):
+        while not any(isinstance(e, IncidentStartedEvent) for e in sink.events):
             threading.Event().wait(0.05)
         assert worker.stop(timeout=5)
 
-        assert [type(e) for e in sink.events if isinstance(e, CameraRestoredEvent)] == [
-            CameraRestoredEvent
+        assert [type(e) for e in sink.events if isinstance(e, IncidentEndedEvent)] == [
+            IncidentEndedEvent
         ]
+
+
+class StageSource:
+    """A grey room and one bright figure, placed by ``where(read count) -> x or None``."""
+
+    name, fps, resolution = "stage", 10.0, (640, 480)
+
+    def __init__(self, where: Callable[[int], int | None]) -> None:
+        self.where = where
+        self.reads = 0
+        self.rng = np.random.default_rng(5)
+
+    def open(self) -> None:
+        pass
+
+    def read(self) -> Frame:
+        frame = np.clip(90 + self.rng.normal(0, 3, (480, 640, 3)), 0, 255).astype(np.uint8)
+        self.reads += 1
+        if (x := self.where(self.reads)) is not None:
+            cv2.rectangle(frame, (x - 25, 200), (x + 25, 400), (230, 230, 230), -1)
+        return frame
+
+    def close(self) -> None:
+        pass
+
+
+class BrightPerson:
+    """A person detector that sees the bright figure (where it is, as the model would)."""
+
+    def detect(self, frame: Frame) -> list[Person]:
+        ys, xs = np.nonzero(frame[:, :, 0] > 200)
+        if len(xs) < 50:
+            return []
+        box = BoundingBox(int(xs.min()), int(ys.min()), int(np.ptp(xs)) + 1, int(np.ptp(ys)) + 1)
+        return [Person(box=box, confidence=0.9)]
+
+
+class ZoneSink(RecordingSink):
+    def __init__(self, ends_needed: int) -> None:
+        super().__init__()
+        self.ends_needed = ends_needed
+
+    def publish_event(self, event: CameraEvent) -> None:
+        super().publish_event(event)
+        ended = [e for e in self.events if isinstance(e, IncidentEndedEvent)]
+        if len(ended) >= self.ends_needed:
+            self.done.set()
+
+
+def run_stage(where: Callable[[int], int | None], zones: tuple[Zone, ...]) -> ZoneSink:
+    sink = ZoneSink(ends_needed=1)
+    checker = InlinePersonChecker(BrightPerson(), threshold=0.5, check_interval_seconds=1)
+    detection = DETECTION.model_copy(update={"zones": zones, "tamper_alerts": False})
+    worker = make_worker(sink, source=StageSource(where), persons=checker, detection=detection)
+    run_until_done(worker, sink, timeout=20)
+    checker.close()
+    return sink
+
+
+class TestZones:
+    def test_crossing_a_line_is_an_incident_with_its_picture(self) -> None:
+        gate = Zone(name="Gate", kind="line", points=((0.5, 0.2), (0.5, 1.0)))
+        # Walks in from the left after 2 s, 8 px a frame, across the middle.
+        sink = run_stage(lambda n: 60 + (n - 20) * 8 if 20 <= n <= 80 else None, (gate,))
+
+        [started] = [e for e in sink.events if isinstance(e, IncidentStartedEvent)]
+        [ended] = [e for e in sink.events if isinstance(e, IncidentEndedEvent)]
+        assert (started.event.kind, started.event.zone) == (EventKind.CROSSED, "Gate")
+        assert started.event.person is True
+        assert ended.event.ended_at == started.event.started_at  # a moment, not a stay
+        assert started.annotated_jpeg != started.snapshot_jpeg  # the zone and person drawn
+        assert sink.frames[-1].tracks or any(f.tracks for f in sink.frames)
+
+    def test_someone_staying_in_an_area_is_lingering_until_they_leave(self) -> None:
+        doorstep = Zone(
+            name="Doorstep",
+            kind="area",
+            points=((0.6, 0.5), (1.0, 0.5), (1.0, 1.0), (0.6, 1.0)),
+            dwell_seconds=4,
+        )
+
+        def where(n: int) -> int | None:
+            if n < 20:
+                return None
+            if n < 40:
+                return 100 + (n - 20) * 22  # walks up to x 540 in 2 s
+            if n < 140:
+                return 540  # and stands there for 10 s, without moving
+            return 540 - (n - 140) * 25 if n < 160 else None  # then walks off
+
+        sink = run_stage(where, (doorstep,))
+
+        [started] = [e for e in sink.events if isinstance(e, IncidentStartedEvent)]
+        [ended] = [e for e in sink.events if isinstance(e, IncidentEndedEvent)]
+        assert (started.event.kind, started.event.zone) == (EventKind.LINGERING, "Doorstep")
+        assert ended.event.ended_at is not None
+        stayed = (ended.event.ended_at - started.event.started_at).total_seconds()
+        # From arriving (3.3 s) to leaving (14.7 s), though standing still, plus a few seconds:
+        # the spot they stood on reads as motion until the background catches up.
+        assert 11 <= stayed <= 17
+        # While standing still, tracking kept them as a person (checks confirmed it).
+        assert any(t.person and t.still for f in sink.frames for t in f.tracks)

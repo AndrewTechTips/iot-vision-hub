@@ -10,10 +10,14 @@ import cv2
 import numpy as np
 
 from vision_hub.domain.motion import BoundingBox
+from vision_hub.vision.config import Zone
 from vision_hub.vision.frame import Frame
 
 AMBER = (71, 181, 255)  # BGR of #ffb547
 AMBER_DIM = (36, 92, 130)  # the outline: the same amber, half as bright
+RED = (122, 92, 255)  # BGR of #ff5c7a: people
+RED_DIM = (61, 46, 128)
+IRIS = (255, 180, 138)  # BGR of #8ab4ff: zones
 
 
 def draw_boxes(
@@ -42,4 +46,24 @@ def draw_boxes(
         ):
             cv2.line(annotated, (x, y), (x + dx * reach_x, y), color, thickness)
             cv2.line(annotated, (x, y), (x, y + dy * reach_y), color, thickness)
+    return annotated
+
+
+def draw_zone(frame: Frame, zone: Zone, *, color: tuple[int, int, int] = IRIS) -> Frame:
+    """A zone's outline (an area) or line, with its name, on a copy of ``frame``."""
+    annotated = frame.copy()
+    height, width = annotated.shape[:2]
+    points = np.array([(round(x * width), round(y * height)) for x, y in zone.points], np.int32)
+    cv2.polylines(annotated, [points], isClosed=zone.kind == "area", color=color, thickness=2)
+    x, y = (int(v) for v in points.min(axis=0))
+    cv2.putText(
+        annotated,
+        zone.name,
+        (x + 6, max(y - 8, 18)),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        color,
+        2,
+        cv2.LINE_AA,
+    )
     return annotated

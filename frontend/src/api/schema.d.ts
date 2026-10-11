@@ -832,15 +832,20 @@ export interface components {
          * @description What an event is: motion, or the camera being tampered with (vision/tamper.py).
          * @enum {string}
          */
-        EventKind: "motion" | "covered" | "blurred" | "moved";
+        EventKind: "motion" | "covered" | "blurred" | "moved" | "lingering" | "crossed";
         /** EventOut */
         EventOut: {
             /** Id */
             id: string;
             /** Device Id */
             device_id: string;
-            /** @description "motion", or the camera being tampered with: "covered", "blurred", "moved" */
+            /** @description "motion"; the camera tampered with: "covered", "blurred", "moved"; a zone rule on people: "lingering", "crossed" */
             kind: components["schemas"]["EventKind"];
+            /**
+             * Zone
+             * @description The zone a zone rule fired in
+             */
+            zone: string | null;
             /**
              * Started At
              * Format: date-time
@@ -1419,10 +1424,16 @@ export interface components {
              */
             started_at: string;
             /**
-             * @description "motion", or the camera being tampered with: "covered", "blurred", "moved"
+             * @description "motion"; the camera tampered with: "covered", "blurred", "moved"; a zone rule on people: "lingering", "crossed"
              * @default motion
              */
             kind: components["schemas"]["EventKind"];
+            /**
+             * Zone
+             * @description The zone a zone rule fired in
+             * @default null
+             */
+            zone: string | null;
             /** Ended At */
             ended_at: string | null;
             /** Peak Area Ratio */
@@ -1477,10 +1488,16 @@ export interface components {
              */
             started_at: string;
             /**
-             * @description "motion", or the camera being tampered with: "covered", "blurred", "moved"
+             * @description "motion"; the camera tampered with: "covered", "blurred", "moved"; a zone rule on people: "lingering", "crossed"
              * @default motion
              */
             kind: components["schemas"]["EventKind"];
+            /**
+             * Zone
+             * @description The zone a zone rule fired in
+             * @default null
+             */
+            zone: string | null;
         };
         /** MotionStartedMessage */
         MotionStartedMessage: {

@@ -13,9 +13,9 @@ from vision_hub.core.metrics import Metrics
 from vision_hub.domain.devices import DeviceStatus
 from vision_hub.domain.events import (
     CameraEvent,
-    CameraRestoredEvent,
-    CameraTamperedEvent,
     DeviceStatusChanged,
+    IncidentEndedEvent,
+    IncidentStartedEvent,
     MotionEndedEvent,
 )
 from vision_hub.domain.motion import MotionEvent
@@ -190,9 +190,9 @@ class CameraManager:
                 self._backoffs[event.device_id].reset()
         elif isinstance(event, MotionEndedEvent):
             self._last_events[event.event.device_id] = event.event
-        elif isinstance(event, CameraTamperedEvent):
+        elif isinstance(event, IncidentStartedEvent) and event.event.kind.tamper:
             self._tampered[event.event.device_id] = event.event
-        elif isinstance(event, CameraRestoredEvent):
+        elif isinstance(event, IncidentEndedEvent) and event.event.kind.tamper:
             self._tampered.pop(event.event.device_id, None)
         try:
             self._on_event(event)

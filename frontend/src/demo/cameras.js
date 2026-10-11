@@ -5,6 +5,7 @@ import { RECORDING_DIR, detectionsAt, passed, uuid7 } from "./recording.js";
 
 /** @typedef {import("./recording.js").RecordedCamera} RecordedCamera */
 /** @typedef {import("./recording.js").RecordedEvent} RecordedEvent */
+/** @typedef {import("./recording.js").RecordedIncident} RecordedIncident */
 /** @typedef {import("../api/types.js").MotionEvent} MotionEvent */
 /** @typedef {import("../api/types.js").DeviceStatus} DeviceStatus */
 
@@ -22,9 +23,10 @@ const TAMPER_CLEAR_MS = 4_000;
  *   started: (camera: Camera, id: string, startedAt: string) => void,
  *   ended: (camera: Camera, event: MotionEvent) => void,
  *   status: (camera: Camera) => void,
- *   tampered: (camera: Camera, event: MotionEvent) => void,
- *   restored: (camera: Camera, event: MotionEvent) => void,
+ *   incidentStarted: (camera: Camera, event: MotionEvent) => void,
+ *   incidentEnded: (camera: Camera, event: MotionEvent) => void,
  * }} CameraListener
+ * Incidents are tampering (from the demo's own "cover the lens" button) and zone rules.
  */
 
 export class Camera {
@@ -58,6 +60,8 @@ export class Camera {
     this.coveredUntil = 0;
     /** @type {MotionEvent | null} the open tamper event */
     this.tampering = null;
+    /** @type {Map<RecordedIncident, MotionEvent>} zone incidents under way */
+    this.incidents = new Map();
   }
 
   get covered() {
@@ -108,6 +112,7 @@ export class Camera {
     clearInterval(this.timer);
     this.video.pause();
     if (this.open) this.finish(new Date()); // the hub closes an open event when a camera stops
+    for (const recorded of [...this.incidents.keys()]) this.resolve(recorded, new Date());
     this.setStatus("stopped");
   }
 
@@ -133,7 +138,34 @@ export class Camera {
         this.finish(new Date());
       }
     }
+    for (const recorded of this.recording.incidents) {
+      if (!this.incidents.has(recorded) && passed(this.previous, now, recorded.fired, duration)) {
+        // Lingering is noticed once they have stayed long enough: it started when they arrived.
+        const started = new Date(Date.now() - (recorded.fired - recorded.start) * 1000);
+        const event = incidentOut(this.id, uuid7(started.getTime()), recorded, started, null);
+        this.incidents.set(recorded, event);
+        this.listener.incidentStarted(this, event);
+      }
+      if (this.incidents.has(recorded) && passed(this.previous, now, recorded.end, duration)) {
+        this.resolve(recorded, new Date());
+      }
+    }
     this.previous = now;
+  }
+
+  /**
+   * A zone incident is over.
+   * @param {RecordedIncident} recorded
+   * @param {Date} endedAt
+   */
+  resolve(recorded, endedAt) {
+    const open = this.incidents.get(recorded);
+    if (!open) return;
+    this.incidents.delete(recorded);
+    this.listener.incidentEnded(
+      this,
+      incidentOut(this.id, open.id, recorded, new Date(open.started_at), endedAt),
+    );
   }
 
   /** The hub's tamper monitor, played: covered long enough, then back long enough. */
@@ -148,13 +180,13 @@ export class Camera {
         null,
         darkSnapshot(this),
       );
-      this.listener.tampered(this, this.tampering);
+      this.listener.incidentStarted(this, this.tampering);
     } else if (this.tampering && !this.covered && now - this.coveredUntil >= TAMPER_CLEAR_MS) {
       const ended = new Date(now);
       const event = { ...this.tampering, ended_at: ended.toISOString(), complete: true };
       event.duration_seconds = Math.round((ended.getTime() - Date.parse(event.started_at)) / 1000);
       this.tampering = null;
-      this.listener.restored(this, event);
+      this.listener.incidentEnded(this, event);
     }
   }
 
@@ -187,6 +219,13 @@ export class Camera {
         const started = new Date(ended.getTime() - (recorded.end - recorded.start) * 1000);
         past.push(eventOut(this.id, uuid7(started.getTime()), started, recorded, ended));
       }
+      for (const recorded of this.recording.incidents) {
+        const endsAgo = startAt - recorded.end + pass * duration;
+        if (endsAgo <= 0) continue; // under way or still to come when the demo starts
+        const ended = new Date(now - endsAgo * 1000);
+        const started = new Date(ended.getTime() - (recorded.end - recorded.start) * 1000);
+        past.push(incidentOut(this.id, uuid7(started.getTime()), recorded, started, ended));
+      }
     }
     return past;
   }
@@ -218,6 +257,7 @@ export function eventOut(deviceId, id, started, recorded, ended) {
     person: recorded.person,
     person_confidence: recorded.person_confidence,
     kind: "motion",
+    zone: null,
     person_at: recorded.person_at === null ? null : moment(recorded.person_at),
     snapshot_at: moment(recorded.snapshot_at),
     alert: recorded.alert,
@@ -239,6 +279,43 @@ export function eventOut(deviceId, id, started, recorded, ended) {
 }
 
 /**
+ * A zone incident as the hub's API returns it: the picture of when it fired, no clip.
+ * @param {string} deviceId
+ * @param {string} id
+ * @param {RecordedIncident} recorded
+ * @param {Date} started
+ * @param {Date | null} ended
+ * @returns {MotionEvent}
+ */
+export function incidentOut(deviceId, id, recorded, started, ended) {
+  return {
+    id,
+    device_id: deviceId,
+    kind: recorded.kind,
+    zone: recorded.zone,
+    started_at: started.toISOString(),
+    ended_at: ended?.toISOString() ?? null,
+    duration_seconds: ended ? Math.round((ended.getTime() - started.getTime()) / 100) / 10 : null,
+    complete: ended !== null,
+    interrupted: false,
+    peak_area_ratio: 0,
+    motion_frames: 0,
+    person: true,
+    person_confidence: null,
+    person_at: null,
+    snapshot_at: started.toISOString(),
+    alert: true,
+    boxes: [],
+    snapshots: /** @type {const} */ (["clean", "annotated", "thumbnail"]).map((kind) => ({
+      kind,
+      url: RECORDING_DIR + recorded.snapshots[kind].path,
+      size_bytes: recorded.snapshots[kind].size_bytes,
+    })),
+    clip: null,
+  };
+}
+
+/**
  * A tamper event as the hub's API returns it: the picture at the time, no clip.
  * @param {string} deviceId
  * @param {string} id
@@ -252,6 +329,7 @@ function tamperOut(deviceId, id, started, ended, snapshot) {
     id,
     device_id: deviceId,
     kind: "covered",
+    zone: null,
     started_at: started.toISOString(),
     ended_at: ended?.toISOString() ?? null,
     duration_seconds: null,

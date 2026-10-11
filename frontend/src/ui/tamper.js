@@ -1,7 +1,7 @@
 // Words for a camera that was tampered with (vision/tamper.py on the hub).
 
 /** @typedef {import("../api/types.js").MotionEvent["kind"]} EventKind */
-/** @typedef {Exclude<EventKind, "motion" | undefined>} TamperKind */
+/** @typedef {Extract<EventKind, "covered" | "blurred" | "moved">} TamperKind */
 
 /** @type {Record<TamperKind, { chip: string, done: string, why: string }>} */
 export const TAMPER = {
@@ -16,5 +16,5 @@ export const TAMPER = {
  * @returns {TamperKind | null}
  */
 export function tamperOf(kind) {
-  return kind && kind !== "motion" ? kind : null;
+  return kind === "covered" || kind === "blurred" || kind === "moved" ? kind : null;
 }

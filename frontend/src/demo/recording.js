@@ -1,8 +1,10 @@
 // The demo's recording (`vision-hub export-demo`, AD-24): each camera's loop, what the hub
-// detected on every analysed frame, and the events it recorded in one pass of the loop.
+// detected on every analysed frame, and the events and zone incidents it recorded in one pass of
+// the loop.
 
 /** @typedef {import("../api/types.js").DetectionConfig} DetectionConfig */
 /** @typedef {import("../realtime/mjpeg.js").Detections} Detections */
+/** @typedef {import("../ui/zone-rules.js").ZoneRule} ZoneRule */
 
 /**
  * @typedef {{ path: string, size_bytes: number }} RecordedFile
@@ -23,6 +25,17 @@
  * Every moment (start, end, snapshot_at, person_at, the clip's started_at) is in seconds into
  * the loop. `end` may pass the loop's end: the event then ends early in the next pass.
  * @typedef {{
+ *   kind: ZoneRule,
+ *   zone: string,
+ *   start: number,
+ *   fired: number,
+ *   end: number,
+ *   snapshots: { clean: RecordedFile, annotated: RecordedFile, thumbnail: RecordedFile },
+ * }} RecordedIncident
+ * A zone rule that fired: someone lingering from `start` (when they arrived; it `fired` once they
+ * had stayed long enough) to `end`, or a line crossed (all three the same). Its pictures are of
+ * the moment it fired.
+ * @typedef {{
  *   id: string,
  *   name: string,
  *   target_fps: number | null,
@@ -35,6 +48,7 @@
  *   height: number,
  *   frames: [time: number, detections: Detections | null][],
  *   events: RecordedEvent[],
+ *   incidents: RecordedIncident[],
  * }} RecordedCamera
  * @typedef {{ version: 1, cameras: RecordedCamera[] }} Recording
  */

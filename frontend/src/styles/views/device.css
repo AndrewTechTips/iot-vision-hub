@@ -154,6 +154,78 @@
     }
   }
 
+  /* Zone rules: areas and lines, named, red while their rule fires. Drawn by ui/zone-editor.js. */
+  .zone-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  .zone-area {
+    fill: rgb(138 180 255 / 0.08);
+    stroke: var(--color-iris);
+    stroke-width: 1.5;
+    stroke-dasharray: 5 4;
+  }
+  .zone-line {
+    stroke: var(--color-iris);
+    stroke-width: 2.5;
+    stroke-linecap: round;
+  }
+  .zone-area.is-active,
+  .zone-line.is-active {
+    fill: rgb(255 92 122 / 0.18);
+    stroke: var(--color-alarm);
+    stroke-dasharray: none;
+  }
+  .zone-labels {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .zone-label {
+    position: absolute;
+    translate: 0.25rem 0.25rem;
+    padding: 0 0.375rem;
+    border-radius: 4px;
+    background: var(--color-ink-800);
+    color: var(--color-iris);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1.6;
+    &.is-active {
+      background: var(--color-alarm);
+      color: var(--color-ink-950);
+    }
+  }
+  .camera-view[data-zone-editing] {
+    cursor: crosshair;
+    touch-action: none;
+  }
+  .zone-list {
+    display: grid;
+    gap: 0.5rem;
+    &:empty {
+      display: none;
+    }
+  }
+  .zone-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.625rem;
+    & .input {
+      flex: 1 1 8rem;
+      height: 2rem;
+      padding-block: 0;
+      font-size: 0.8125rem;
+    }
+    & .input[type="number"] {
+      flex: none;
+    }
+  }
+
   .roi-toolbar {
     display: grid;
     gap: 0.625rem;

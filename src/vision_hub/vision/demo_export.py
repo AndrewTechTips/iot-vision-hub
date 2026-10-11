@@ -5,9 +5,11 @@ Each camera's loop runs through a real ``CameraWorker`` three times in a row, th
 warming the background model up. From the middle pass the export keeps:
 
 * per analysed frame, its time in the loop and what the live stream's ``X-Detections`` header
-  would carry (motion boxes as fractions of the picture, the person score once found);
+  would carry (motion boxes as fractions of the picture, the person score once found, the
+  tracked objects);
 * per event, its timing within the loop, the verdict, and the snapshot, annotated copy,
-  thumbnail and clip the hub would store.
+  thumbnail and clip the hub would store;
+* per zone incident (someone lingering, a line crossed), its rule, zone, timing and pictures.
 
 Time comes from the frames read, not the wall clock, and person checks run inline instead of on
 a background thread, so the export is the same on every machine and every run.
@@ -25,7 +27,12 @@ from typing import Any
 
 import cv2
 
-from vision_hub.domain.events import CameraEvent, MotionEndedEvent
+from vision_hub.domain.events import (
+    CameraEvent,
+    IncidentEndedEvent,
+    IncidentStartedEvent,
+    MotionEndedEvent,
+)
 from vision_hub.realtime.mjpeg import detections
 from vision_hub.vision.bridge import FramePacket
 from vision_hub.vision.clip import ClipSettings
@@ -56,6 +63,7 @@ class CameraExport:
     frames: int
     events: int
     people: int
+    incidents: int
 
 
 def export_demo(
@@ -81,6 +89,7 @@ def export_demo(
                 frames=len(camera["frames"]),
                 events=len(camera["events"]),
                 people=sum(1 for event in camera["events"] if event["person"]),
+                incidents=len(camera["incidents"]),
             )
         )
     (output / "manifest.json").write_text(json.dumps(manifest, separators=(",", ":")))
@@ -96,14 +105,18 @@ def _export_camera(
         VideoFileSource(VideoFileSourceConfig(path=loop, loop=True), paced=False),
         limit=length * PASSES,
     )
-    sink = _RecordingSink()
+
+    def clock() -> datetime:
+        return _T0 + timedelta(seconds=source.reads / fps)
+
+    sink = _RecordingSink(clock)
     worker = CameraWorker(
         device_id=spec.id,
         source=source,
         detection=spec.detection,
         sink=sink,
         target_fps=spec.target_fps or 10.0,
-        clock=lambda: _T0 + timedelta(seconds=source.reads / fps),
+        clock=clock,
         clips=ClipSettings(),
         persons=checker,
     )
@@ -130,6 +143,15 @@ def _export_camera(
         if not 0 <= start < duration or event.event.ended_at is None:
             continue
         events.append(_export_event(event, start, offset, directory, spec.id, len(events) + 1))
+    incidents: list[dict[str, Any]] = []
+    for started, fired in sink.incidents:
+        start = offset(started.event.started_at)
+        ended = sink.resolved.get(started.event.id)
+        if not 0 <= start < duration or started.event.zone is None or ended is None:
+            continue  # tampering is played by the demo itself, from its own button
+        incidents.append(
+            _export_incident(started, fired, ended, offset, directory, spec.id, len(incidents) + 1)
+        )
     height, width = _frame_size(loop)
     return {
         "id": spec.id,
@@ -144,6 +166,7 @@ def _export_camera(
         "height": height,
         "frames": frames,
         "events": events,
+        "incidents": incidents,
     }
 
 
@@ -198,6 +221,34 @@ def _export_event(
     }
 
 
+def _export_incident(
+    started: IncidentStartedEvent,
+    fired: datetime,
+    ended: datetime,
+    offset: Callable[[datetime], float],
+    directory: Path,
+    camera: str,
+    number: int,
+) -> dict[str, Any]:
+    files = {}
+    for kind, data in (
+        ("clean", started.snapshot_jpeg),
+        ("annotated", started.annotated_jpeg),
+        ("thumbnail", started.thumbnail_jpeg),
+    ):
+        name = f"incident-{number}-{kind}.jpg"
+        (directory / name).write_bytes(data)
+        files[kind] = {"path": f"{camera}/{name}", "size_bytes": len(data)}
+    return {
+        "kind": started.event.kind.value,
+        "zone": started.event.zone,
+        "start": round(offset(started.event.started_at), 3),
+        "fired": round(offset(fired), 3),  # lingering: once they had stayed long enough
+        "end": round(offset(ended), 3),
+        "snapshots": files,
+    }
+
+
 class _CountingSource:
     """A source that counts its reads (the export's clock) and stops after ``limit``."""
 
@@ -233,9 +284,12 @@ class _CountingSource:
 
 
 class _RecordingSink:
-    def __init__(self) -> None:
+    def __init__(self, clock: Callable[[], datetime]) -> None:
+        self._clock = clock
         self.frames: list[FramePacket] = []
         self.ended: list[MotionEndedEvent] = []
+        self.incidents: list[tuple[IncidentStartedEvent, datetime]] = []  # and when it fired
+        self.resolved: dict[str, datetime] = {}  # incident id -> when it ended
         self.done = threading.Event()
 
     @property
@@ -246,8 +300,15 @@ class _RecordingSink:
         self.frames.append(packet)
 
     def publish_event(self, event: CameraEvent) -> None:
-        if isinstance(event, MotionEndedEvent):
-            self.ended.append(event)
+        match event:
+            case MotionEndedEvent():
+                self.ended.append(event)
+            case IncidentStartedEvent():
+                self.incidents.append((event, self._clock()))
+            case IncidentEndedEvent(event=done) if done.ended_at is not None:
+                self.resolved[done.id] = done.ended_at
+            case _:
+                pass
 
     def worker_exited(self, *, crashed: bool) -> None:
         self.done.set()

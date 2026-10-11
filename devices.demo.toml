@@ -20,6 +20,13 @@ alert_on = "person"
 # He stops moving at the door for a moment: keep the walk up and the ring as one event.
 motion_end_grace_seconds = 4.0
 
+# Someone at the door, or on their way up to it, for 8 seconds: he is ringing by then.
+[[devices.detection.zones]]
+name = "Doorstep"
+kind = "area"
+points = [[0.0, 0.5], [1.0, 0.5], [1.0, 1.0], [0.0, 1.0]]
+dwell_seconds = 8
+
 [[devices]]
 id = "lobby"
 name = "Lobby"
@@ -30,6 +37,12 @@ path = "data/demo/lobby.webm"
 
 [devices.detection]
 alert_on = "person"
+
+# Someone walking out past the shop windows on the right.
+[[devices.detection.zones]]
+name = "Shop front"
+kind = "line"
+points = [[0.75, 0.35], [0.75, 1.0]]
 
 [[devices]]
 id = "driveway"

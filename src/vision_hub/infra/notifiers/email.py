@@ -76,9 +76,14 @@ class EmailNotifier:
         message = EmailMessage()
         what = "Person" if event.person else "Motion"
         message["Subject"] = f"{what} detected: {alert.device_name}"
-        if event.kind is not EventKind.MOTION:
+        where = f"{alert.device_name} ({event.zone})" if event.zone else alert.device_name
+        if event.kind.tamper:
             word, why = TAMPERING[event.kind]
             message.replace_header("Subject", f"Camera {word}: {alert.device_name}")
+        elif event.kind is EventKind.LINGERING:
+            message.replace_header("Subject", f"Someone lingering: {where}")
+        elif event.kind is EventKind.CROSSED:
+            message.replace_header("Subject", f"Line crossed: {where}")
         message["From"] = self._sender
         message["To"] = ", ".join(self._config.effective_recipients)
         message["X-Vision-Hub-Event"] = event.id
@@ -93,11 +98,21 @@ class EmailNotifier:
                 else "The snapshot of the event is no longer available."
             )
         )
-        if event.kind is not EventKind.MOTION:
+        attached = "What the camera saw is attached." if image else ""
+        if event.kind.tamper:
             word, why = TAMPERING[event.kind]
             summary = (
                 f"{alert.device_name} may have been tampered with at {started}: {why}. "
                 + ("What it sees now is attached." if image else "")
+            ).strip()
+        elif event.kind is EventKind.LINGERING:
+            summary = (
+                f"Someone has been in {event.zone} at {alert.device_name} since {started}. "
+                f"{attached}"
+            ).strip()
+        elif event.kind is EventKind.CROSSED:
+            summary = (
+                f"Someone crossed {event.zone} at {alert.device_name} at {started}. {attached}"
             ).strip()
         message.set_content(f"{summary}\n\nEvent ID: {event.id}\n")
         if not image:

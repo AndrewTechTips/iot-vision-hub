@@ -116,6 +116,8 @@ async function staleWhileRevalidate(/** @type {Request} */ request) {
  *   duration_seconds: number | null,
  *   person: boolean | null,
  *   tamper?: "covered" | "blurred" | "moved" | null,
+ *   rule?: "lingering" | "crossed" | null,
+ *   zone?: string | null,
  *   image: string | null,
  * } | { kind: "test" }} PushAlert
  */
@@ -165,15 +167,23 @@ async function notify(alert) {
   const lasted = alert.duration_seconds;
   const what = alert.tamper
     ? `${alert.device_name} camera ${TAMPER[alert.tamper]}`
-    : alert.person
-      ? `Person at ${alert.device_name}`
-      : `Motion on ${alert.device_name}`;
+    : alert.rule === "lingering"
+      ? `Someone lingering at ${alert.device_name}`
+      : alert.rule === "crossed"
+        ? `Someone crossed ${alert.zone}`
+        : alert.person
+          ? `Person at ${alert.device_name}`
+          : `Motion on ${alert.device_name}`;
   return registration.showNotification(what, {
     body: alert.tamper
       ? `Since ${clock(alert.started_at)}. Check on it.`
-      : lasted
-        ? `At ${clock(alert.started_at)}, for ${duration(lasted)}.`
-        : `At ${clock(alert.started_at)}.`,
+      : alert.rule === "lingering"
+        ? `In ${alert.zone} since ${clock(alert.started_at)}.`
+        : alert.rule === "crossed"
+          ? `At ${alert.device_name}, ${clock(alert.started_at)}.`
+          : lasted
+            ? `At ${clock(alert.started_at)}, for ${duration(lasted)}.`
+            : `At ${clock(alert.started_at)}.`,
     icon: ICON,
     badge: BADGE,
     // Shown large on Android and Windows; the link is signed, so no sign-in is needed.

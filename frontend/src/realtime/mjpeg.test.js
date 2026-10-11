@@ -45,7 +45,7 @@ describe("createPartParser", () => {
 
     for (let i = 0; i < stream.length; i += 5) push(stream.subarray(i, i + 5));
 
-    const found = { boxes: [[0.5, 0.25, 0.1, 0.5]], person: 0.87 };
+    const found = { boxes: [[0.5, 0.25, 0.1, 0.5]], person: 0.87, tracks: [] };
     expect(parsed).toEqual([
       [1, found],
       [2, null],
@@ -70,7 +70,17 @@ describe("parseDetections", () => {
   it("reads the header whatever its case", () => {
     expect(
       parseDetections('Content-Length: 3\r\nx-detections: {"boxes":[],"person":null}'),
-    ).toEqual({ boxes: [], person: null });
+    ).toEqual({ boxes: [], person: null, tracks: [] });
+  });
+
+  it("reads tracked objects with their id and person score", () => {
+    const header =
+      'X-Detections: {"boxes":[],"person":null,"tracks":[[0.1,0.1,0.2,0.5,7,0.91],[0.5,0.5,0.1,0.1,8,null]]}';
+
+    expect(parseDetections(header)?.tracks).toEqual([
+      [0.1, 0.1, 0.2, 0.5, 7, 0.91],
+      [0.5, 0.5, 0.1, 0.1, 8, null],
+    ]);
   });
 
   it("ignores malformed detections instead of failing the frame", () => {
@@ -80,6 +90,8 @@ describe("parseDetections", () => {
       '{"boxes":[["a",0,1,1]],"person":null}',
       '{"boxes":{},"person":null}',
       '{"boxes":[],"person":"high"}',
+      '{"boxes":[],"person":null,"tracks":[[0,0,1,1,"x",null]]}',
+      '{"boxes":[],"person":null,"tracks":[[0,0,1,1]]}',
     ]) {
       expect(parseDetections(`X-Detections: ${value}`), value).toBeNull();
     }

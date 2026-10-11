@@ -242,7 +242,7 @@ def test_export_demo_reports_each_camera(
 
     def export(cameras: list[Any], detector: object, output: Path, *, threshold: float) -> Any:
         calls.append(([c.id for c in cameras], output))
-        return [CameraExport(camera="front-door", frames=316, events=1, people=1)]
+        return [CameraExport(camera="front-door", frames=316, events=1, people=1, incidents=2)]
 
     monkeypatch.setattr(cli, "load_person_detector", lambda path: object())
     monkeypatch.setattr(cli, "export_demo", export)
@@ -251,6 +251,6 @@ def test_export_demo_reports_each_camera(
     cli.main(["export-demo", "--devices", str(devices), "--output", str(tmp_path)])
 
     assert calls == [([clip.name for clip in CLIPS], tmp_path)]
-    assert "front-door: 1 events per loop (1 with a person), 316 analysed frames" in (
-        capsys.readouterr().out
-    )
+    assert (
+        "front-door: 1 events per loop (1 with a person), 2 zone incidents, 316 analysed frames"
+    ) in capsys.readouterr().out

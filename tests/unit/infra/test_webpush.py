@@ -181,6 +181,8 @@ class TestNotifier:
                 "duration_seconds": 12.0,
                 "person": None,
                 "tamper": None,
+                "rule": None,
+                "zone": None,
                 "image": "/snapshot/evt-1",
             }
             assert headers["Content-Encoding"] == "aes128gcm"

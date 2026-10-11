@@ -5,6 +5,7 @@ import { deviceName } from "../state/devices.js";
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
 import { TAMPER, tamperOf } from "./tamper.js";
+import { ZONE_RULE, zoneRuleOf } from "./zone-rules.js";
 import { formatClock, formatDuration, timeAgo } from "./time.js";
 
 /** @typedef {import("../api/types.js").MotionEvent} MotionEvent */
@@ -99,6 +100,13 @@ export function eventRow(initial, { onOpen } = {}) {
         !event.complete && !event.interrupted && tag("sodium", "In progress", true),
         event.interrupted &&
           tag("alarm", "Interrupted", false, "The hub stopped before this event ended."),
+        zoneRuleOf(event.kind) &&
+          tag(
+            "alarm",
+            `${ZONE_RULE[/** @type {import("./zone-rules.js").ZoneRule} */ (event.kind)].tag} · ${event.zone ?? "zone"}`,
+            false,
+            "A zone rule fired.",
+          ),
         tamperOf(event.kind) &&
           tag(
             "alarm",
@@ -114,6 +122,19 @@ export function eventRow(initial, { onOpen } = {}) {
   }
 
   function renderFacts() {
+    const rule = zoneRuleOf(event.kind);
+    if (rule) {
+      const zone = event.zone ?? "a zone";
+      facts.textContent =
+        rule === "crossed"
+          ? `Someone crossed ${zone}`
+          : event.complete && event.duration_seconds !== null
+            ? `Someone stayed ${formatDuration(event.duration_seconds)} in ${zone}`
+            : event.interrupted
+              ? `Someone in ${zone}`
+              : `Someone in ${zone} now`;
+      return;
+    }
     const tamper = tamperOf(event.kind);
     if (tamper) {
       const done = TAMPER[tamper].done;

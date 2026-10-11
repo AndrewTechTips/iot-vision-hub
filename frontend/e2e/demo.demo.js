@@ -65,10 +65,52 @@ test("the camera page draws the person's box from the recording", async ({ page 
 
   const stage = page.locator(".device-stage");
   await expect(stage).toHaveAttribute("data-state", "playing");
-  await expect(stage.locator(".detection-layer[data-person]:not([data-idle])")).toBeAttached({
-    timeout: 45_000,
-  });
+  // His tracked body, labelled with the person check's score.
+  const person = stage.locator(".detection-box[data-person]:not([hidden])");
+  await expect(person.first()).toBeAttached({ timeout: 45_000 });
+  await expect(person.first().locator(".detection-label")).toHaveText(/^Person \d+ %$/);
   await expect(stage.locator(".camera-motion")).toContainText(/Person \d+ %/);
+});
+
+test("zone rules alert: someone crossing a line, someone lingering at the door", async ({
+  page,
+}) => {
+  await page.goto("./");
+
+  // The lobby's visitor walks out past the shop front ~9 s in; at the front door, he has been
+  // at the door 8 s (the Doorstep area's dwell) ~10 s in, and leaves ~25 s in.
+  const crossed = page.locator(".toast", { hasText: "Someone crossed Shop front" });
+  await expect(crossed).toBeVisible({ timeout: 30_000 });
+  await expect(crossed).toContainText("At Lobby");
+  const lingering = page.locator(".toast", { hasText: "Someone lingering at Front door" });
+  await expect(lingering).toBeVisible({ timeout: 30_000 });
+  await expect(lingering).toContainText("In Doorstep since");
+  await expect(page.locator(".toast", { hasText: "Doorstep is clear" })).toBeVisible({
+    timeout: 40_000,
+  });
+  await expect(lingering).toHaveCount(0); // replaced by the all-clear
+
+  // Through the app: a reload would start a fresh demo hub.
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .first()
+    .getByRole("link", { name: "Events" })
+    .click();
+  const stayed = page.locator(".event-row", { hasText: "Lingering · Doorstep" }).first();
+  await expect(stayed).toContainText(/Someone stayed \d+ s in Doorstep/);
+  await expect(
+    page.locator(".event-row", { hasText: "Crossed · Shop front" }).first(),
+  ).toContainText("Someone crossed Shop front");
+});
+
+test("the camera page shows its zones, lit while a rule fires", async ({ page }) => {
+  await page.goto("./devices/front-door");
+
+  const stage = page.locator(".device-stage");
+  await expect(stage.locator(".zone-labels")).toHaveText("Doorstep");
+  await expect(stage.locator(".zone-area")).toHaveCount(1);
+  await expect(stage.locator(".zone-area.is-active")).toHaveCount(1, { timeout: 30_000 });
+  await expect(page.getByText("Zone rules: 1 area.")).toBeVisible();
 });
 
 test("history, filters and deep links work without a server", async ({ page }) => {

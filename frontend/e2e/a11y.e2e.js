@@ -34,6 +34,9 @@ test("camera page with admin controls", async ({ page }) => {
   await audit(page, "camera page");
   await page.getByRole("button", { name: "Edit areas" }).click();
   await audit(page, "camera page, editing areas");
+  await page.getByRole("button", { name: "Edit zones" }).click();
+  await page.getByRole("button", { name: "Add area" }).click();
+  await audit(page, "camera page, editing zones");
 });
 
 test("activity and not-found pages", async ({ page }) => {

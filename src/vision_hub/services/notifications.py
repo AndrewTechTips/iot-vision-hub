@@ -28,10 +28,10 @@ from vision_hub.core.security import utc_now
 from vision_hub.core.tasks import TaskSupervisor
 from vision_hub.domain.bus import EventBus, Subscription
 from vision_hub.domain.events import (
+    INCIDENT_STARTED,
     MOTION_ENDED,
-    TAMPER_STARTED,
     CameraEvent,
-    CameraTamperedEvent,
+    IncidentStartedEvent,
     MotionEndedEvent,
 )
 from vision_hub.domain.motion import MotionEvent
@@ -98,7 +98,7 @@ class NotificationService:
             return
         # Subscribe first, before cameras start, so no event published afterwards is missed.
         subscription = self._subscription = self._bus.subscribe(
-            f"{MOTION_ENDED}.*", f"{TAMPER_STARTED}.*"
+            f"{MOTION_ENDED}.*", f"{INCIDENT_STARTED}.*"
         )
         pending: int | None = None
         try:
@@ -159,7 +159,7 @@ class NotificationService:
         channels = [name for name, notifier in self._notifiers.items() if await _wanted(notifier)]
         await self._deliver(ended.event, ended.annotated_jpeg, channels, at=now)
 
-    async def handle_tamper(self, tampered: CameraTamperedEvent) -> None:
+    async def handle_incident(self, tampered: IncidentStartedEvent) -> None:
         """A camera covered, blurred or moved alerts at once, past any motion cooldown: it is
         rare, and the moment someone is defeating a camera is the moment to know."""
         channels = [name for name, notifier in self._notifiers.items() if await _wanted(notifier)]
@@ -186,8 +186,8 @@ class NotificationService:
         async for envelope in subscription:
             if isinstance(envelope.message, MotionEndedEvent):
                 await self.handle(envelope.message)
-            elif isinstance(envelope.message, CameraTamperedEvent):
-                await self.handle_tamper(envelope.message)
+            elif isinstance(envelope.message, IncidentStartedEvent):
+                await self.handle_incident(envelope.message)
 
     async def _dispatch_loop(self) -> None:
         while True:

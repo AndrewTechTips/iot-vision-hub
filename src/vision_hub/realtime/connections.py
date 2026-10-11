@@ -24,10 +24,10 @@ from vision_hub.domain.auth import Principal
 from vision_hub.domain.bus import EventBus, Subscription
 from vision_hub.domain.events import (
     DEVICE_STATUS,
+    INCIDENT_ENDED,
+    INCIDENT_STARTED,
     MOTION_ENDED,
     MOTION_STARTED,
-    TAMPER_ENDED,
-    TAMPER_STARTED,
     CameraEvent,
     DeviceStatusChanged,
 )
@@ -214,8 +214,8 @@ class ConnectionManager:
         subscription = self._bus.subscribe(
             f"{MOTION_STARTED}.*",
             f"{MOTION_ENDED}.*",
-            f"{TAMPER_STARTED}.*",
-            f"{TAMPER_ENDED}.*",
+            f"{INCIDENT_STARTED}.*",
+            f"{INCIDENT_ENDED}.*",
             f"{DEVICE_STATUS}.*",
             maxsize=self._config.client_queue_size,
             overflow="drop_newest",

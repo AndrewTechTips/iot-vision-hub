@@ -18,6 +18,7 @@ from datetime import datetime
 
 from vision_hub.domain.events import CameraEvent
 from vision_hub.domain.motion import BoundingBox
+from vision_hub.vision.tracking import TrackView
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +35,7 @@ class FramePacket:
     jpeg: bytes = field(repr=False)
     boxes: tuple[BoundingBox, ...] = ()  # moving regions, in this JPEG's pixels
     person: float | None = None  # score, once the open event's checks found a person
+    tracks: tuple[TrackView, ...] = ()  # tracked objects and people, in this JPEG's pixels
 
 
 class FramesClosedError(Exception):

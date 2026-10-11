@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from vision_hub.domain.motion import BoundingBox
-from vision_hub.vision.config import DetectionConfig
+from vision_hub.vision.config import DetectionConfig, Zone
 from vision_hub.vision.demo_export import export_demo
 from vision_hub.vision.fleet import DeviceSpec
 from vision_hub.vision.frame import Frame
@@ -34,6 +34,17 @@ class Everyone:
 
     def detect(self, frame: Frame) -> list[Person]:
         return [Person(box=BoundingBox(x=0, y=0, width=10, height=20), confidence=0.9)]
+
+
+class BrightPerson:
+    """Sees the bright square as a person, where it is."""
+
+    def detect(self, frame: Frame) -> list[Person]:
+        ys, xs = np.nonzero(frame[:, :, 0] > 200)
+        if len(xs) < 50:
+            return []
+        box = BoundingBox(int(xs.min()), int(ys.min()), int(np.ptp(xs)) + 1, int(np.ptp(ys)) + 1)
+        return [Person(box=box, confidence=0.9)]
 
 
 def camera(path: Path, **detection: object) -> DeviceSpec:
@@ -83,6 +94,26 @@ def test_records_frames_and_events_of_one_pass(tmp_path: Path) -> None:
     assert (output / event["clip"]["path"]).stat().st_size == event["clip"]["size_bytes"]
     assert (output / room["loop"]).read_bytes() == loop.read_bytes()
     assert (summary.camera, summary.events, summary.people) == ("room", 1, 1)
+    assert room["incidents"] == []
+    # Every analysed frame carries the tracked objects too.
+    assert all("tracks" in found for _, found in room["frames"] if found)
+
+
+def test_records_zone_incidents(tmp_path: Path) -> None:
+    loop = tmp_path / "room.webm"
+    write_loop(loop)
+    middle = Zone(name="Middle", kind="line", points=((0.5, 0), (0.5, 1)))
+    output = tmp_path / "demo"
+
+    [summary] = export_demo([camera(loop, zones=(middle,))], BrightPerson(), output)
+
+    [room] = json.loads((output / "manifest.json").read_text())["cameras"]
+    [crossed] = room["incidents"]
+    assert (crossed["kind"], crossed["zone"]) == ("crossed", "Middle")
+    assert 2 < crossed["start"] == crossed["fired"] == crossed["end"] < 4  # mid-crossing
+    for kind in ("clean", "annotated", "thumbnail"):
+        assert (output / crossed["snapshots"][kind]["path"]).read_bytes()[:2] == b"\xff\xd8"
+    assert summary.incidents == 1
 
 
 def test_only_video_file_cameras_can_be_exported(tmp_path: Path) -> None:
