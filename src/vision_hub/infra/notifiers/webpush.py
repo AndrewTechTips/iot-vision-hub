@@ -11,10 +11,7 @@ import asyncio
 import base64
 import json
 import os
-import urllib.error
-import urllib.request
-from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
@@ -31,6 +28,7 @@ from vision_hub.core.logging import get_logger
 from vision_hub.core.security import utc_now
 from vision_hub.domain.notifications import Alert, NotificationError
 from vision_hub.domain.push import PushSubscription, PushSubscriptionRepository, PushTestResult
+from vision_hub.infra.notifiers.http import HttpResponse, HttpTransport, post
 
 logger = get_logger(__name__)
 
@@ -159,40 +157,10 @@ def load_or_create_vapid_key(path: Path) -> VapidKey:
     return key
 
 
-@dataclass(frozen=True, slots=True)
-class PushResponse:
-    status: int
-    body: str = ""
-
-
-type PushTransport = Callable[[str, Mapping[str, str], bytes, float], Awaitable[PushResponse]]
-
-
-class _NoRedirects(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
-        return None  # a redirect is answered as the error it is
-
-
-_opener = urllib.request.build_opener(_NoRedirects)
-
-
-async def urllib_transport(
-    url: str, headers: Mapping[str, str], body: bytes, timeout_seconds: float
-) -> PushResponse:
-    """POST with the standard library, in a worker thread: alerts are few, so a connection
-    pool would buy nothing."""
-
-    def post() -> PushResponse:
-        # https only: subscriptions are checked with endpoint_allowed before they are stored.
-        request = urllib.request.Request(url, body, dict(headers), method="POST")  # noqa: S310
-        try:
-            with _opener.open(request, timeout=timeout_seconds) as response:
-                return PushResponse(response.status)
-        except urllib.error.HTTPError as error:
-            detail = error.read(500).decode(errors="replace")
-            return PushResponse(error.code, detail)
-
-    return await asyncio.to_thread(post)
+# The push services are plain HTTPS POSTs.
+PushResponse = HttpResponse
+type PushTransport = HttpTransport
+urllib_transport = post
 
 
 class Outcome(StrEnum):

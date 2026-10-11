@@ -49,6 +49,8 @@ from vision_hub.infra.db.repositories.push import SqlPushSubscriptionRepository
 from vision_hub.infra.db.repositories.tokens import SqlTokenRevocationStore
 from vision_hub.infra.db.repositories.users import SqlUserRepository
 from vision_hub.infra.notifiers.email import EmailNotifier
+from vision_hub.infra.notifiers.telegram import TelegramNotifier
+from vision_hub.infra.notifiers.webhook import WebhookNotifier
 from vision_hub.infra.notifiers.webpush import (
     VapidKey,
     WebPushNotifier,
@@ -399,10 +401,18 @@ def _retry_policy(config: NotificationsConfig) -> RetryPolicy:
 
 
 def _build_notifiers(settings: Settings) -> list[Notifier]:
-    if not settings.smtp.enabled:
+    zone = settings.notifications.zone
+    public_url = str(settings.app.public_url) if settings.app.public_url else None
+    notifiers: list[Notifier] = []
+    if settings.smtp.enabled:
+        notifiers.append(EmailNotifier(settings.smtp, zone=zone))
+    else:
         logger.info("email_alerts_disabled", hint=f"set {env_name('smtp', 'enabled')}=true")
-        return []
-    return [EmailNotifier(settings.smtp)]
+    if settings.telegram.enabled:
+        notifiers.append(TelegramNotifier(settings.telegram, zone=zone, public_url=public_url))
+    if settings.webhook.enabled:
+        notifiers.append(WebhookNotifier(settings.webhook, zone=zone, public_url=public_url))
+    return notifiers
 
 
 def _build_web_push(

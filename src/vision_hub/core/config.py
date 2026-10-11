@@ -10,10 +10,12 @@ from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from cryptography.fernet import Fernet
 from limits import parse as parse_rate_limit
 from pydantic import (
+    AnyHttpUrl,
     BaseModel,
     BeforeValidator,
     ConfigDict,
@@ -70,6 +72,9 @@ class AppConfig(_Group):
     shutdown_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
     # Built dashboard (frontend/dist) to serve at /; None serves the API only.
     dashboard_dir: Path | None = None
+    # Where people open the dashboard (https://hub.example.com): Telegram alerts and webhooks
+    # link to the event there. Unset: no links.
+    public_url: AnyHttpUrl | None = None
 
     @field_validator("log_level", mode="before")
     @classmethod
@@ -188,11 +193,65 @@ class NotificationsConfig(_Group):
     retry_initial_seconds: float = Field(default=10.0, gt=0, le=3600)  # doubles each attempt
     retry_max_seconds: float = Field(default=900.0, gt=0, le=86400)
     max_age_hours: float = Field(default=24.0, gt=0, le=720)  # older alerts are dropped
+    # Times in alert texts (email, Telegram, webhooks), as an IANA name: "Europe/Bucharest".
+    timezone: str = "UTC"
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError, ValueError:
+            msg = 'not a known time zone (use an IANA name such as "Europe/Bucharest")'
+            raise ValueError(msg) from None
+        return value
+
+    @property
+    def zone(self) -> ZoneInfo:
+        return ZoneInfo(self.timezone)
 
     @model_validator(mode="after")
     def _ordered_delays(self) -> Self:
         if self.retry_max_seconds < self.retry_initial_seconds:
             msg = "retry_max_seconds must not be less than retry_initial_seconds"
+            raise ValueError(msg)
+        return self
+
+
+class TelegramConfig(_Group):
+    """Alerts as Telegram messages with the snapshot, from a bot (@BotFather creates one; send it
+    a message, then ``getUpdates`` shows your chat id)."""
+
+    enabled: bool = False
+    bot_token: SecretStr | None = None
+    # Who gets alerts: chat ids (people, groups) or "@channelname" (the bot must be an admin).
+    chat_ids: CsvStrList = Field(default_factory=list)
+    timeout_seconds: float = Field(default=15.0, gt=0, le=60)
+    api_url: AnyHttpUrl = AnyHttpUrl("https://api.telegram.org")  # or a self-hosted Bot API
+
+    @model_validator(mode="after")
+    def _complete(self) -> Self:
+        if self.enabled and (self.bot_token is None or not self.chat_ids):
+            msg = "Telegram is enabled but bot_token or chat_ids is missing"
+            raise ValueError(msg)
+        return self
+
+
+class WebhookConfig(_Group):
+    """Alerts POSTed as JSON to a URL of yours (Home Assistant, n8n, a script), signed with
+    HMAC-SHA256 when a secret is set."""
+
+    enabled: bool = False
+    url: AnyHttpUrl | None = None
+    # Shared secret: requests carry X-Vision-Hub-Signature, sha256=HMAC(secret, timestamp.body).
+    secret: SecretStr | None = None
+    include_image: bool = False  # the snapshot, base64, in the payload (about 50-150 KB)
+    timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+
+    @model_validator(mode="after")
+    def _has_url(self) -> Self:
+        if self.enabled and self.url is None:
+            msg = "the webhook is enabled but has no url"
             raise ValueError(msg)
         return self
 
@@ -364,6 +423,8 @@ class Settings(BaseSettings):
     smtp: SmtpConfig = Field(default_factory=SmtpConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     push: PushConfig = Field(default_factory=PushConfig)
+    telegram: TelegramConfig = Field(default_factory=TelegramConfig)
+    webhook: WebhookConfig = Field(default_factory=WebhookConfig)
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     db: DatabaseConfig = Field(default_factory=DatabaseConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
@@ -412,6 +473,10 @@ class Settings(BaseSettings):
             )
         if "*" in self.security.allowed_hosts:
             problems.append(f"{env_name('security', 'allowed_hosts')} must not contain '*'")
+        if self.webhook.enabled and self.webhook.secret is None:
+            problems.append(
+                f"{env_name('webhook', 'secret')} must be set (receivers verify alerts with it)"
+            )
 
         if problems:
             msg = "Unsafe production configuration:\n  - " + "\n  - ".join(problems)

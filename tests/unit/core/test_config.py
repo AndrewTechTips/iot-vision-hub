@@ -350,3 +350,20 @@ class TestEnvExample:
 def test_notification_retry_delays_must_be_ordered() -> None:
     with pytest.raises(ValidationError, match="retry_max_seconds"):
         NotificationsConfig(retry_initial_seconds=60, retry_max_seconds=10)
+
+
+class TestAlertChannels:
+    def test_alert_times_need_a_known_time_zone(self) -> None:
+        assert str(NotificationsConfig(timezone="Europe/Bucharest").zone) == "Europe/Bucharest"
+        with pytest.raises(ValidationError, match="time zone"):
+            NotificationsConfig(timezone="Mars/Olympus_Mons")
+
+    def test_a_production_webhook_must_be_signed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        prod_env(monkeypatch)
+        set_env(monkeypatch, webhook__enabled="true", webhook__url="https://example.com/hook")
+
+        with pytest.raises(ValidationError, match="VISION_HUB_WEBHOOK__SECRET"):
+            Settings()
+
+        set_env(monkeypatch, webhook__secret="a-shared-secret")
+        assert Settings().webhook.enabled is True

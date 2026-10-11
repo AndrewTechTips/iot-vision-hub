@@ -1,4 +1,4 @@
-"""Outbound alerts: one ``Notifier`` per channel (email now; webhook/Telegram later), and the
+"""Outbound alerts: one ``Notifier`` per channel (email, web push, Telegram, webhook), and the
 outbox that keeps undelivered alerts across restarts."""
 
 from collections.abc import Collection, Mapping, Sequence

@@ -5,12 +5,16 @@ import html
 import socket
 from email.message import EmailMessage
 from email.utils import make_msgid
+from zoneinfo import ZoneInfo
 
 import aiosmtplib
 
 from vision_hub.core.config import SmtpConfig
 from vision_hub.domain.motion import EventKind
 from vision_hub.domain.notifications import Alert, NotificationError
+from vision_hub.infra.notifiers.text import TAMPERING
+
+UTC_ZONE = ZoneInfo("UTC")
 
 # Retrying cannot fix these: wrong credentials, or the server refusing sender/recipients.
 _PERMANENT = (
@@ -21,22 +25,15 @@ _PERMANENT = (
 )
 
 
-# What tampering means, in a sentence: (short word, explanation).
-TAMPERING = {
-    EventKind.COVERED: ("covered", "its picture went flat, as if something covers the lens"),
-    EventKind.BLURRED: ("out of focus", "its picture went blurry: a smeared lens or turned focus"),
-    EventKind.MOVED: ("moved", "it no longer sees its usual view, as if it was turned"),
-}
-
-
 class EmailNotifier:
-    def __init__(self, config: SmtpConfig) -> None:
+    def __init__(self, config: SmtpConfig, *, zone: ZoneInfo = UTC_ZONE) -> None:
         sender = config.effective_sender
         if not config.enabled or sender is None or not config.effective_recipients:
             msg = "EmailNotifier needs SMTP enabled with a sender and at least one recipient"
             raise ValueError(msg)
         self._config = config
         self._sender = sender
+        self._zone = zone
 
     @property
     def name(self) -> str:
@@ -69,7 +66,7 @@ class EmailNotifier:
 
     def build_message(self, alert: Alert) -> EmailMessage:
         event = alert.event
-        started = event.started_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+        started = event.started_at.astimezone(self._zone).strftime("%Y-%m-%d %H:%M:%S %Z")
         duration = (event.ended_at - event.started_at).total_seconds() if event.ended_at else 0.0
         filename = f"motion-{alert.device_id}-{event.started_at:%Y%m%dT%H%M%SZ}.jpg"
 
