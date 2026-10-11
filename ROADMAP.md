@@ -1,4 +1,4 @@
-# 🗺️ IoT Vision Hub — Roadmap
+# IoT Vision Hub: Roadmap
 
 > **Source of truth** for the migration from the single-script *Thief Detection Notifier* into an
 > asynchronous, modular **IoT Vision Hub** (FastAPI + OpenCV). The MVP runs as a **single process on a
@@ -14,17 +14,17 @@
 
 ---
 
-## 📍 Current Status
+## Current Status
 
 - **Active phase:** Phase 7 — Showcase (Phases 1–6 are complete: MVP, event clips, person detection)
 - **Working branch:** `main`
-- **Next task:** the rest of 7.5 (tracking and zone rules) or 7.6 (both optional)
+- **Next task:** what is left of 7.6 (privacy masks, MQTT with Home Assistant, Grafana), all optional
 - **Legacy code:** removed. The original script is the reference for porting the detector in Phase 2:
   `git show 14af13a:main.py` / `git show 14af13a:emailing.py`.
 
 ---
 
-## 🧭 Architecture Decisions
+## Architecture Decisions
 
 | # | Decision | Choice | Rationale |
 |---|----------|--------|-----------|
@@ -53,12 +53,13 @@
 | AD-23 | Live overlays | The hub sends **detections as data** and the **dashboard draws them** over the video. They ride in each MJPEG part's `X-Detections` header (boxes as fractions of the picture, plus the person score once the open event found one), so the JPEG stays clean. Snapshots and clips are unchanged | A header ties the boxes to the exact frame: a separate WebSocket message would arrive early or late and the boxes would trail the person. Styled boxes (motion vs person) that can be switched off, with no re-encoding. An `<img>` ignores the header, so plain MJPEG clients keep working. One code path for the live view and the public demo |
 | AD-24 | Public demo | **GitHub Pages** hosts the real dashboard, unchanged, built in a **demo mode** that adds a hub living in the tab: it replaces `fetch` and `WebSocket` for `/api/v1` and answers the API, the realtime protocol and the MJPEG streams (frames drawn from looping videos, with the detections recorded for that moment). Its data is recorded from the real camera worker (`vision-hub export-demo`) and its responses are typed against the OpenAPI schema. Served under the repository path, deep links through `404.html` | Pages only serves static files. Visitors try the actual app in seconds, with no server to run or pay for. Faking the network rather than the app keeps the demo honest: every view, the router and the realtime client run as in production, and the type check catches drift from the API |
 | AD-25 | Demo footage | Four free Pexels clips, **fetched from Pexels at run time** (pinned URLs and SHA-256, `vision-hub demo-footage`) and turned into camera loops on the machine: trimmed, 640 px 16:9 at 15 fps, a crossfade from the last frame to the first, then the empty scene played back and forth. VP8 WebM written by OpenCV | Real people make person detection visible (YOLOX scores the synthetic figure 0.0). Fetching instead of re-hosting keeps the repository small and stays well inside the Pexels licence. A hard cut at the loop point would look like motion; the crossfade and idle scene give one event per visit. No new dependency |
-| AD-27 | Tracking and zone rules | Motion boxes are merged into objects and matched across frames by overlap, every analysed frame (~10 µs); the person model's rare answers (every 2 s, AD-22) **label** the track whose motion lies inside a person's box, which then keeps that person's whole body as its box, moved with its motion. A person who stops moving is **held** and looked at again every 2 s; gone, the track ends. Zone rules watch people's **feet** (the box's bottom centre): an **area** alerts once it has been occupied for `dwell_seconds` (presence, not a track id), a **line** when feet cross it. Each fired rule is an event of its kind (`lingering`, `crossed`, with its `zone`), alerted at its start like tamper (AD-26) | A tracker that matches by overlap needs no new dependency and is enough for fixed cameras at 10 fps; running the model per frame (~280 ms) is out of reach on a small CPU. Counting presence rather than ids keeps the clock running through an id swap. Feet, not boxes, decide where someone is: a head poking into an area from behind does not count. Lingering ends a few seconds late, as the background model catches up with where someone stood; freezing the background under still people was rejected, as someone sitting for an hour would then start a new event (and alert) every two minutes |
 | AD-26 | Tamper detection | A `TamperMonitor` per camera, in the camera thread, 2 checks a second on a 160 px copy: **covered** (contrast collapses), **blurred** (detail relative to contrast drops), **moved** (edge correlation with the usual view drops; a view turned for 5 min becomes the new usual). Suspicions must last 8 s, recovery 4 s; the usual view adapts over ~10 min. A tamper incident is an **event of its kind** (`kind` on `motion_events`), stored with its picture and alerted **at its start** through the outbox, past the motion cooldown | Reusing events gives tamper alerts history, snapshots, WebSocket replay and the outbox's at-least-once delivery for free. Relative measures keep dusk quiet; the hold time keeps someone walking past the lens quiet. A room whose only light goes off looks covered, so cameras can turn tamper alerts off |
+| AD-27 | Tracking and zone rules | Motion boxes are merged into objects and matched across frames by overlap, every analysed frame (~10 µs); the person model's rare answers (every 2 s, AD-22) **label** the track whose motion lies inside a person's box, which then keeps that person's whole body as its box, moved with its motion. A person who stops moving is **held** and looked at again every 2 s; gone, the track ends. Zone rules watch people's **feet** (the box's bottom centre): an **area** alerts once it has been occupied for `dwell_seconds` (presence, not a track id), a **line** when feet cross it. Each fired rule is an event of its kind (`lingering`, `crossed`, with its `zone`), alerted at its start like tamper (AD-26) | A tracker that matches by overlap needs no new dependency and is enough for fixed cameras at 10 fps; running the model per frame (~280 ms) is out of reach on a small CPU. Counting presence rather than ids keeps the clock running through an id swap. Feet, not boxes, decide where someone is: a head poking into an area from behind does not count. Lingering ends a few seconds late, as the background model catches up with where someone stood; freezing the background under still people was rejected, as someone sitting for an hour would then start a new event (and alert) every two minutes |
+| AD-28 | Releases and alert channels | The image is published to **GHCR for amd64 and arm64** by a reusable workflow that CI calls once every check passed (`latest` from main, semver from `v*` tags). Each architecture builds **natively** on its own runner (GitHub's arm64 runners, no QEMU), is smoke-tested (the person model must load and run), and is pushed by digest; one job joins them into a multi-arch index and adds a **build provenance attestation**. Arch-independent stages (dashboard, model) build once, on the builder's platform. **Telegram** and **webhooks** are two more `Notifier`s on the same outbox, over one standard-library HTTP helper that never follows redirects; webhooks are signed with **HMAC-SHA256 over timestamp and body** | Native arm64 runners turn a 30+ minute emulated build into minutes, and testing each architecture before it is published catches a missing wheel where it would hurt. An attestation lets anyone check the image came from this repository. Reusing the outbox gives the new channels retries, restarts and cooldowns for free; signing timestamp and body lets receivers reject forged and replayed requests, and production refuses an unsigned webhook |
 
 ---
 
-## 🗂️ Target Layout
+## Target Layout
 
 ```
 .
@@ -180,7 +181,7 @@
 - [x] `docker-compose.yml` with the `api` service (read-only root fs, dropped capabilities, data volume; `postgres` added in Phase 3)
 - [x] Health probes exempt from the trusted-host check (orchestrators probe with the container IP)
 
-**✅ Phase 1 exit criteria**
+**Phase 1 exit criteria**
 - [x] `docker compose up` serves `/api/v1/health/live` and Swagger UI (dev)
 - [x] CI green: lint, strict types, tests ≥ 85 % coverage on `src/` (first GitHub run on `4585699`: both jobs passed)
 - [x] Protected routes reject unauthenticated requests
@@ -257,7 +258,7 @@
 - [x] Update README with features, architecture diagram, quick start, API overview, browser real-time example and a real alert snapshot
 - [x] Rejected WebSocket handshakes are logged (`ws_rejected`) — found while testing from a real browser
 
-**✅ Phase 2 exit criteria**
+**Phase 2 exit criteria**
 - [x] Multiple mocked cameras run concurrently; API stays responsive under load (load smoke test; 30 s soak: 50/50 events to all 20 clients)
 - [x] Live MJPEG feed and real-time WS alerts work from a browser (verified in a real browser: `<img>` stream, ticket → WebSocket, live statuses and motion events, ticket reuse refused)
 - [x] Email alert fires once per motion event (not per flicker) (tracker flicker regression tests, end-to-end SMTP test, live run: one email per event)
@@ -304,7 +305,7 @@
 - [x] Prometheus `/metrics`: FPS per camera, processing latency, event-loop lag, WS clients, queue drops, notification failures (plus camera status, frame age, restarts, alerts pending, HTTP by route, process CPU/memory; scrape token)
 - [x] Optional detector plug-in: person detection — done in Phase 6 (YOLOX-s on onnxruntime, AD-22)
 
-**✅ Phase 3 exit criteria**
+**Phase 3 exit criteria**
 - [x] Events and snapshots survive restarts and are queryable via the API
 - [x] Pending notifications are delivered after a crash/restart
 - [x] Metrics show per-camera health
@@ -360,7 +361,7 @@
   - **Tests:** 7 e2e tests in full Chromium (the headless shell has no notifications) and an end-to-end hub test (motion → encrypted push → signed snapshot loads).
   - **Not verified here:** delivery through Google's, Mozilla's or Apple's real push services, which needs a real browser on HTTPS.
 
-**✅ Phase 4 exit criteria**
+**Phase 4 exit criteria**
 - [x] Dashboard usable on a phone; alerts appear within 1 s of motion ending (e2e on Pixel 7: 17–444 ms from the hub's `motion.ended` to the toast)
 - [x] Live view and alerts recover on their own after a hub restart, with missed events replayed (verified live by restarting the hub under an open dashboard)
 - [x] Lighthouse mobile performance and accessibility ≥ 90 (applied throttling: 95–100 and 100; simulated 75 on stream pages is a Lantern artifact, see `docs/performance.md`)
@@ -385,7 +386,7 @@
   - **CPU:** the two demo cameras, recording most of the time, took the hub from 15 % to 28 % of a core.
   - **Also fixed:** `frontend/e2e/devices.toml` had never been committed (the `devices.toml` ignore rule hid it), and the camera stop/start test ran on desktop and phone at once on a shared camera. It now has its own camera; 114/114 passed over 3 repeats
 
-**✅ Phase 5 exit criteria**
+**Phase 5 exit criteria**
 - [x] A motion event recorded by the Docker image plays in the dashboard, including the seconds before detection
 - [x] Recording adds no measurable delay to alerts (closing a clip: ~1 ms; alerts 229–448 ms after the event in e2e), and clips are removed by retention (tested)
 
@@ -408,7 +409,7 @@
 ### 6.3 Delivery
 - [x] Docker image ships the model (verified at build, pinned in step with the hub by a test); CI caches the model so the real-model tests run there. Measured in the image (`docs/performance.md#person-detection`): two busy demo cameras 24 % → 35 % of a core; an alert waits for at most one check
 
-**✅ Phase 6 exit criteria**
+**Phase 6 exit criteria**
 - [x] A camera set to people only stays quiet for motion without people and alerts for a person (real model, in tests and in the Docker image: yard 0 of 12 events alerted, door 5 of 5)
 - [x] With the model missing, every camera still alerts (and says why in the logs: `person_model_missing` with the fix)
 
@@ -461,23 +462,27 @@ dashboard, richer history, and a public demo anyone can open. Designs: AD-23, AD
 - [x] Zone rules (`vision/zones.py`, migration 0009: `zone`): areas where someone **lingering** for `dwell_seconds` alerts (and the toast stays until they leave), lines where someone **crossing** alerts; up to 8 per camera, in `detection.zones`. Alerts go out at once through the outbox (email "Someone lingering: …", push), the WebSocket and the dashboard (toasts, "Lingering · Doorstep" tags, the zone lit on the camera page). Snapshots draw the zone and the people in it
   - **Found while choosing the demo zones:** someone walking up to the camera has their feet on the picture's bottom edge, which fell outside an area drawn to that edge; feet are now kept just inside the picture. In the lobby, whose floor is barely in view, feet heights jumped with each person check, so its line is vertical (left-right position comes from motion and is steady)
 - [x] Zone editor on the camera page: add an area (tap corners) or a line (tap two ends), drag corners, name each zone and set its dwell; saved with the other detection settings. Watch areas and zones edit one at a time
+- [x] Devices report who is lingering now (`lingering` on `GET /devices`), so a camera page opened mid-visit lights the zone at once instead of waiting for the next rule
+  - **Found while recording the README animation**, as were box labels clipped at the picture's top and right edges (now placed inside)
 - [x] The demo shows both: someone lingering at the front door ("Doorstep", 8 s, fired while he rings) and someone crossing the lobby's "Shop front" line; `export-demo` records the tracks and zone incidents. Tests: tracker, zones and worker (pytest), export, e2e for the editor (real hub) and the demo's toasts, history and lit zones
 
 ### 7.6 Integrations & deployment *(pick what is worth it)*
-- [ ] Multi-arch image (amd64, arm64) on GHCR, and a Raspberry Pi guide
+- [x] Multi-arch image (amd64, arm64) on GHCR, and a Raspberry Pi guide (AD-28, `.github/workflows/image.yml`, `docs/raspberry-pi.md`): built natively per architecture, smoke-tested, attested; Compose uses the published image (`docker compose pull`) unless asked to `--build`, and the image carries the demo fleet so the demo needs no checkout
+  - Checked on the Mac's native arm64: the image runs the person model and the four demo cameras (about 1.2 cores, 410 MB); not yet measured on a Pi
 - [ ] Privacy masks: areas blurred in the live view, snapshots and clips
 - [ ] MQTT with Home Assistant discovery (new dependency: decide first)
-- [ ] Telegram or webhook notifier behind the existing `Notifier` port
+- [x] Telegram and webhook notifiers behind the existing `Notifier` port (AD-28, `docs/integrations.md`): the snapshot with a caption to each Telegram chat; JSON webhooks signed with HMAC-SHA256, with an optional base64 snapshot. Alert texts in a configurable time zone (email too) and, with `VISION_HUB_APP__PUBLIC_URL`, a link to the event
+  - **Found by the new tests:** the shared HTTP helper (taken from web push) never closed error responses, leaking a connection per failed delivery; it does now. A camera event is tested end to end up to a signed webhook on a local server
 - [ ] Grafana dashboard for the Prometheus metrics, in an optional Compose profile
 
-**✅ Phase 7 exit criteria**
+**Phase 7 exit criteria**
 - [x] The live view draws detections from data, and the stream has no burnt-in boxes
 - [x] The demo cameras show real scenes, and people-only mode visibly ignores non-people
 - [x] A public demo link works on desktop and phone, deep links included, with no backend (checked on the built site locally; live once Pages is switched on)
 
 ---
 
-## 🔭 Future — Horizontal Scaling *(deferred, only if needed)*
+## Future: Horizontal Scaling *(deferred, only if needed)*
 
 Not part of the MVP. The ports introduced above (`EventBus`, `SnapshotStore`, repositories) are the seams for this work.
 

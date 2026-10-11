@@ -16,9 +16,13 @@ VISION_HUB_APP__PUBLIC_URL=https://hub.example.com    # alerts link to the event
 
 Each alert arrives as the snapshot with a caption, from a bot you own:
 
+<img src="assets/alert-lingering.jpg" width="480" alt="The snapshot sent with a lingering alert: the front door, the Doorstep zone outlined and the man at the bell boxed in red" />
+
 > **Someone lingering at Front door**
 > In Doorstep since 11 Oct 2026, 14:05:23 EEST.
 > [Open in Vision Hub](#)
+
+The snapshot is the annotated one: the people in red, and for a zone rule, the zone.
 
 1. In Telegram, talk to [@BotFather](https://t.me/BotFather), send `/newbot`, and keep the
    token it gives you.
