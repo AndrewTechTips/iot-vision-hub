@@ -42,16 +42,17 @@
 
 **[andrewtechtips.github.io/iot-vision-hub/](https://andrewtechtips.github.io/iot-vision-hub/)** runs the real dashboard, unchanged, against a hub
 that lives in your browser tab. Four cameras play real footage, people get boxed in red and
-alert, the car and the swaying shadow don't, and every page works: events, clips, settings,
-stopping a camera.
+alert, the car and the swaying shadow don't. Someone lingering at the front door and someone
+crossing a line in the lobby trip zone rules, and every page works: events, clips, settings,
+zones, stopping a camera.
 
 How it is made, on every push to `main` ([`demo.yml`](.github/workflows/demo.yml)):
 
 1. `vision-hub demo-footage` fetches the four clips from Pexels and turns them into camera loops
    ([docs/demo-footage.md](docs/demo-footage.md)).
 2. `vision-hub export-demo` runs each loop through the real camera worker, motion detector and
-   person model, and records what the hub saw: the boxes on every analysed frame, each event
-   with its snapshots and clip.
+   person model, and records what the hub saw: the boxes and tracked people on every analysed
+   frame, each event with its snapshots and clip, each zone rule that fired.
 3. The dashboard is built with `--mode demo`: a small hub in [`frontend/src/demo/`](frontend/src/demo)
    answers the API, the WebSocket and the MJPEG streams from that recording, typed against the
    OpenAPI schema so it can't drift from the real API. Live frames are drawn from the looping
@@ -118,6 +119,9 @@ They run anywhere, no hardware needed.</sub>
 - **Tamper alerts:** a camera covered, knocked out of focus or turned away alerts at once, in
   red, until it sees normally again. Measured against what the camera usually sees, adapting
   with the daylight, so dusk raises nothing (0.1 ms a check).
+- **Tracking and zone rules:** each person keeps an id from frame to frame, boxed whole with
+  their score, even while standing still. Draw areas and lines on the picture: someone staying
+  in an area too long (say 10 s at the door) or crossing a line alerts at once.
 
 ### Alerts
 - **On your phone:** web push notifications with the snapshot, also when the dashboard is
@@ -359,6 +363,11 @@ mode, wildcard CORS/hosts and unencrypted SMTP.
   settings whether alerts go out on any motion (the default) or on people only. Without the
   model every event alerts. Checks run on one background thread for all cameras, about 0.3 s
   of one core each, a few per event ([measurements](docs/performance.md#person-detection)).
+- **Zone rules** are drawn on the camera page (or set as `zones` in a camera's detection
+  settings, see [`devices.example.toml`](devices.example.toml)) and watch people, so they need
+  the person model; without it they count anything that moves. Where someone stands is the
+  bottom of their box, their feet. Lingering ends a few seconds after they leave, while the
+  background catches up with the spot they stood on.
 - **Event clips** are on by default (`VISION_HUB_CLIPS__*`): 3 s before the detection plus the
   event, up to 120 s, at 640 px. Recording costs 6–17 % of a core per camera while an event is
   open, nothing between events; `VISION_HUB_CLIPS__WIDTH=480` halves that

@@ -185,6 +185,25 @@ no false alarm in any loop, and a hand over the lens, a smeared lens and a camer
 each caught on all four scenes, 8 s after they start (the hold time) and cleared 4 s after the
 view returns. A synthetic 40-minute dusk raises nothing: the usual view adapts over ~10 minutes.
 
+## Tracking and zone rules
+
+Tracking runs on every analysed frame, in the camera thread (`vision/tracking.py`,
+`vision/zones.py`): merging motion boxes, matching them to tracks by overlap, and checking
+feet against zones. Measured on the four demo loops with an area and a line:
+
+| Loop | Most motion boxes in a frame | Per frame |
+|---|---:|---:|
+| Front door | 5 | 9 µs |
+| Driveway | 5 | 8 µs |
+| Lobby | 4 | 3 µs |
+| Patio | 2 | 3 µs |
+
+That is noise next to the motion detector. The real cost is person checks outside events: an
+object nobody has looked at gets up to 3, and a person standing still one every 2 s. They share
+the background thread and the 2 s interval with event checks, run only when no event check is
+under way, and pause for a minute after the model fails, so the person model still runs at most
+once every 2 s per camera.
+
 ## Dashboard
 
 Lighthouse 12, mobile (Moto G Power viewport, 4G at 562 ms RTT and 1.6 Mbps, 4× CPU slowdown),

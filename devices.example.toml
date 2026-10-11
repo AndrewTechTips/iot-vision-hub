@@ -49,6 +49,19 @@ password = "change-me"
 # Only watch the lower half of the frame (normalised x, y points).
 roi = [[[0.0, 0.5], [1.0, 0.5], [1.0, 1.0], [0.0, 1.0]]]
 
+# Zone rules on people (up to 8; also drawn on the camera page): someone standing in an area
+# for dwell_seconds, or crossing a line, alerts at once.
+[[devices.detection.zones]]
+name = "Car"
+kind = "area"
+points = [[0.2, 0.55], [0.7, 0.55], [0.7, 1.0], [0.2, 1.0]]
+dwell_seconds = 20
+
+[[devices.detection.zones]]
+name = "Gate"
+kind = "line"
+points = [[0.85, 0.5], [0.85, 1.0]]
+
 # The machine's built-in or USB camera (disabled: opening it may prompt for permission).
 [[devices]]
 id = "desk"
