@@ -1,7 +1,7 @@
 import asyncio
 import threading
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -274,3 +274,33 @@ class TestTampering:
 
         assert tampered == covered
         assert manager.tampering("other") is None
+
+    async def test_knows_who_is_lingering_in_which_zone_right_now(self) -> None:
+        factory = FakeFactory()
+        manager = CameraManager(worker_factory=factory)
+        await manager.start(spec())
+        sink = factory.workers[0].sink
+        now = datetime.now(UTC)
+
+        def lingering(event_id: str, zone: str, seconds: int) -> MotionEvent:
+            return MotionEvent(
+                id=event_id,
+                device_id="cam-1",
+                started_at=now + timedelta(seconds=seconds),
+                kind=EventKind.LINGERING,
+                zone=zone,
+            )
+
+        door, gate = lingering("l1", "Door", 5), lingering("l2", "Gate", 0)
+        for event in (door, gate):
+            sink.publish_event(IncidentStartedEvent(event=event, snapshot_jpeg=b"x"))
+        await wait_for(lambda: len(manager.lingering("cam-1")) == 2)
+        both = manager.lingering("cam-1")
+        sink.publish_event(IncidentEndedEvent(event=gate))
+        await wait_for(lambda: len(manager.lingering("cam-1")) == 1)
+        await manager.stop_all()
+
+        assert both == [gate, door]  # oldest first
+        assert manager.lingering("cam-1") == [door]
+        assert manager.tampering("cam-1") is None  # lingering is not tampering
+        assert manager.lingering("other") == []

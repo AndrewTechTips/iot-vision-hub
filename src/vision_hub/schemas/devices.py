@@ -33,6 +33,12 @@ class TamperOut(ApiSchema):
     since: datetime
 
 
+class LingeringOut(ApiSchema):
+    event_id: str
+    zone: str
+    since: datetime = Field(description="When they arrived in the zone")
+
+
 class DeviceOut(ApiSchema):
     id: str
     name: str
@@ -47,6 +53,9 @@ class DeviceOut(ApiSchema):
     last_event: LastEvent | None
     tampering: TamperOut | None = Field(
         description="Set while the camera is covered, out of focus or turned away"
+    )
+    lingering: list[LingeringOut] = Field(
+        description="Zones someone is lingering in now (zone rules)"
     )
 
     @classmethod
@@ -77,6 +86,10 @@ class DeviceOut(ApiSchema):
                 if view.tampering
                 else None
             ),
+            lingering=[
+                LingeringOut(event_id=event.id, zone=event.zone or "", since=event.started_at)
+                for event in view.lingering
+            ],
         )
 
 

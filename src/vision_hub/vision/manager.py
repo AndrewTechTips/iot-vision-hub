@@ -18,7 +18,7 @@ from vision_hub.domain.events import (
     IncidentStartedEvent,
     MotionEndedEvent,
 )
-from vision_hub.domain.motion import MotionEvent
+from vision_hub.domain.motion import EventKind, MotionEvent
 from vision_hub.vision.bridge import LatestFrame, LoopBridge
 from vision_hub.vision.clip import ClipSettings
 from vision_hub.vision.fleet import DeviceSpec
@@ -87,6 +87,7 @@ class CameraManager:
         self._statuses: dict[str, DeviceStatus] = {}
         self._last_events: dict[str, MotionEvent] = {}
         self._tampered: dict[str, MotionEvent] = {}  # open tamper events, per device
+        self._lingering: dict[str, dict[str, MotionEvent]] = {}  # device -> zone -> open event
         self._backoffs: dict[str, Backoff] = {}
         self._restarts: dict[str, asyncio.Task[None]] = {}
         self._wanted: set[str] = set()  # devices that should be running
@@ -111,6 +112,10 @@ class CameraManager:
     def tampering(self, device_id: str) -> MotionEvent | None:
         """The camera's open tamper event, while it is covered, blurred or moved."""
         return self._tampered.get(device_id)
+
+    def lingering(self, device_id: str) -> list[MotionEvent]:
+        """The camera's open lingering events, one per zone someone is lingering in now."""
+        return sorted(self._lingering.get(device_id, {}).values(), key=lambda e: e.started_at)
 
     def frames(self, device_id: str) -> LatestFrame:
         """Live frames of a device (raises ``KeyError`` for unknown devices)."""
@@ -151,6 +156,7 @@ class CameraManager:
             self._statuses,
             self._last_events,
             self._tampered,
+            self._lingering,
             self._backoffs,
         ):
             state.pop(device_id, None)
@@ -194,6 +200,11 @@ class CameraManager:
             self._tampered[event.event.device_id] = event.event
         elif isinstance(event, IncidentEndedEvent) and event.event.kind.tamper:
             self._tampered.pop(event.event.device_id, None)
+        elif isinstance(event, IncidentStartedEvent) and event.event.kind is EventKind.LINGERING:
+            zones = self._lingering.setdefault(event.event.device_id, {})
+            zones[event.event.zone or ""] = event.event
+        elif isinstance(event, IncidentEndedEvent) and event.event.kind is EventKind.LINGERING:
+            self._lingering.get(event.event.device_id, {}).pop(event.event.zone or "", None)
         try:
             self._on_event(event)
         except Exception:

@@ -805,6 +805,11 @@ export interface components {
             last_event: components["schemas"]["LastEvent"] | null;
             /** @description Set while the camera is covered, out of focus or turned away */
             tampering: components["schemas"]["TamperOut"] | null;
+            /**
+             * Lingering
+             * @description Zones someone is lingering in now (zone rules)
+             */
+            lingering: components["schemas"]["LingeringOut"][];
         };
         /**
          * DeviceStatus
@@ -934,6 +939,19 @@ export interface components {
             ended_at: string | null;
             /** Peak Area Ratio */
             peak_area_ratio: number;
+        };
+        /** LingeringOut */
+        LingeringOut: {
+            /** Event Id */
+            event_id: string;
+            /** Zone */
+            zone: string;
+            /**
+             * Since
+             * Format: date-time
+             * @description When they arrived in the zone
+             */
+            since: string;
         };
         /** Liveness */
         Liveness: {

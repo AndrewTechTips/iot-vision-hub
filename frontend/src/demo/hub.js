@@ -167,6 +167,9 @@ export async function startDemoHub() {
             since: camera.tampering.started_at,
           }
         : null,
+      lingering: [...camera.incidents.values()]
+        .filter((event) => event.kind === "lingering")
+        .map((event) => ({ event_id: event.id, zone: event.zone ?? "", since: event.started_at })),
       last_event: last
         ? {
             id: last.id,

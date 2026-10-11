@@ -120,6 +120,7 @@ class TestReading:
         assert (gate["running"], gate["status"]) == (False, "stopped")
         assert porch["running"] is True
         assert porch["tampering"] is None
+        assert porch["lingering"] == []
         assert porch["source"]["kind"] == "synthetic"
         assert porch["detection"]["min_motion_area"] == 0.01
         assert body["next_cursor"] is None

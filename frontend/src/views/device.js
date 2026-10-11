@@ -150,6 +150,8 @@ export default {
       view.setVisible(true);
       view.setMotion(Boolean(device.last_event && !device.last_event.ended_at));
       view.setTamper(tamperOf(device.tampering?.kind));
+      // Someone already lingering when the page opened: their zone is lit from the start.
+      for (const { zone } of device.lingering ?? []) zones.setActive(zone, true);
 
       // ── Side panels ─────────────────────────────────────
       const facts = h("dl", { class: "device-facts" });

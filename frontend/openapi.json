@@ -3108,6 +3108,14 @@
               }
             ],
             "description": "Set while the camera is covered, out of focus or turned away"
+          },
+          "lingering": {
+            "items": {
+              "$ref": "#/components/schemas/LingeringOut"
+            },
+            "type": "array",
+            "title": "Lingering",
+            "description": "Zones someone is lingering in now (zone rules)"
           }
         },
         "type": "object",
@@ -3123,7 +3131,8 @@
           "running",
           "stream",
           "last_event",
-          "tampering"
+          "tampering",
+          "lingering"
         ],
         "title": "DeviceOut"
       },
@@ -3486,6 +3495,31 @@
           "peak_area_ratio"
         ],
         "title": "LastEvent"
+      },
+      "LingeringOut": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "title": "Event Id"
+          },
+          "zone": {
+            "type": "string",
+            "title": "Zone"
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Since",
+            "description": "When they arrived in the zone"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event_id",
+          "zone",
+          "since"
+        ],
+        "title": "LingeringOut"
       },
       "Liveness": {
         "properties": {

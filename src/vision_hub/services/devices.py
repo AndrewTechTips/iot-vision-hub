@@ -48,6 +48,7 @@ class DeviceView:
     latest_frame: FramePacket | None
     last_event: MotionEvent | None
     tampering: MotionEvent | None = None  # open while the camera is covered, blurred or moved
+    lingering: tuple[MotionEvent, ...] = ()  # open while someone lingers in one of its zones
 
 
 class DeviceService:
@@ -254,4 +255,5 @@ class DeviceService:
             latest_frame=latest,
             last_event=self._cameras.last_event(spec.id),
             tampering=self._cameras.tampering(spec.id),
+            lingering=tuple(self._cameras.lingering(spec.id)),
         )
