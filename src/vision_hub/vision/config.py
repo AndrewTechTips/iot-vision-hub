@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from vision_hub.core.config import VisionConfig
 
@@ -13,6 +13,34 @@ type Point = tuple[
 """Normalised ``(x, y)``: 0..1 of the frame width/height, so masks survive resolution changes."""
 
 type Polygon = Annotated[tuple[Point, ...], Field(min_length=3, max_length=64)]
+
+
+class Zone(BaseModel):
+    """A rule on part of the picture, for people (vision/zones.py). An **area** alerts when
+    someone stays in it for ``dwell_seconds``; a **line** alerts when someone crosses it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(min_length=1, max_length=40)
+    kind: Literal["area", "line"]
+    points: tuple[Point, ...] = Field(
+        min_length=2,
+        max_length=32,
+        description="Normalised (x, y) points: an area's corners, or a line's two ends",
+    )
+    dwell_seconds: float = Field(
+        default=10.0, ge=1, le=600, description="Areas: how long someone must stay"
+    )
+
+    @model_validator(mode="after")
+    def _shape_fits_the_kind(self) -> Self:
+        if self.kind == "area" and len(self.points) < 3:
+            msg = "an area needs at least 3 points"
+            raise ValueError(msg)
+        if self.kind == "line" and len(self.points) != 2:
+            msg = "a line has exactly 2 points"
+            raise ValueError(msg)
+        return self
 
 
 class DetectionConfig(BaseModel):
@@ -43,6 +71,18 @@ class DetectionConfig(BaseModel):
     # Watch for the camera being covered, knocked out of focus or turned away. A room whose only
     # light is switched off looks covered: turn this off for such cameras.
     tamper_alerts: bool = True
+    # Rules for people: lingering in an area, crossing a line (needs person detection to tell
+    # people from other motion; without it, anything moving counts).
+    zones: tuple[Zone, ...] = Field(default=(), max_length=8)
+
+    @field_validator("zones")
+    @classmethod
+    def _names_are_unique(cls, zones: tuple[Zone, ...]) -> tuple[Zone, ...]:
+        names = [zone.name.casefold() for zone in zones]
+        if len(names) != len(set(names)):
+            msg = "zone names must be unique"
+            raise ValueError(msg)
+        return zones
 
     @field_validator("blur_kernel_size")
     @classmethod

@@ -749,6 +749,11 @@ export interface components {
              * @default true
              */
             tamper_alerts: boolean;
+            /**
+             * Zones
+             * @default []
+             */
+            zones: components["schemas"]["Zone"][];
         };
         /** DeviceCreate */
         DeviceCreate: {
@@ -1333,6 +1338,31 @@ export interface components {
              * @description Requested frame rate
              */
             fps?: number | null;
+        };
+        /**
+         * Zone
+         * @description A rule on part of the picture, for people (vision/zones.py). An **area** alerts when
+         *     someone stays in it for ``dwell_seconds``; a **line** alerts when someone crosses it.
+         */
+        Zone: {
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "area" | "line";
+            /**
+             * Points
+             * @description Normalised (x, y) points: an area's corners, or a line's two ends
+             */
+            points: components["schemas"]["Point"][];
+            /**
+             * Dwell Seconds
+             * @description Areas: how long someone must stay
+             * @default 10
+             */
+            dwell_seconds: number;
         };
         /** DeviceStatusData */
         DeviceStatusData: {

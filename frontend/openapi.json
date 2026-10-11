@@ -2940,6 +2940,15 @@
             "type": "boolean",
             "title": "Tamper Alerts",
             "default": true
+          },
+          "zones": {
+            "items": {
+              "$ref": "#/components/schemas/Zone"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Zones",
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -4378,6 +4387,51 @@
         "additionalProperties": false,
         "type": "object",
         "title": "WebcamSourceConfig"
+      },
+      "Zone": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "area",
+              "line"
+            ],
+            "title": "Kind"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/Point"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "minItems": 2,
+            "title": "Points",
+            "description": "Normalised (x, y) points: an area's corners, or a line's two ends"
+          },
+          "dwell_seconds": {
+            "type": "number",
+            "maximum": 600.0,
+            "minimum": 1.0,
+            "title": "Dwell Seconds",
+            "description": "Areas: how long someone must stay",
+            "default": 10.0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "points"
+        ],
+        "title": "Zone",
+        "description": "A rule on part of the picture, for people (vision/zones.py). An **area** alerts when\nsomeone stays in it for ``dwell_seconds``; a **line** alerts when someone crosses it."
       },
       "DeviceStatusData": {
         "properties": {
