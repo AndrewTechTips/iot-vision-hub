@@ -18,7 +18,7 @@ RUN npm run build
 
 # ── Person-detection model (AD-22): fetched once, verified, cached by these args ─
 # Must match MODEL_URL and MODEL_SHA256 in src/vision_hub/vision/persons.py (a test checks).
-FROM --platform=$BUILDPLATFORM python:3.14-slim-trixie AS model
+FROM --platform=$BUILDPLATFORM python:3.15-slim-trixie AS model
 
 ARG PERSON_MODEL_URL=https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/object_detection_yolox/object_detection_yolox_2022nov.onnx
 ARG PERSON_MODEL_SHA256=c5c2d13e59ae883e6af3b45daea64af4833a4951c92d116ec270d9ddbe998063
@@ -32,7 +32,7 @@ open('/person-yolox-s.onnx', 'wb').write(data)"
 
 
 # ── Build: resolve dependencies into a self-contained virtualenv ─────────────
-FROM python:3.14-slim-trixie AS builder
+FROM python:3.15-slim-trixie AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.22 /uv /bin/uv
 
@@ -56,7 +56,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 
 # ── Runtime: no compilers, no uv, no source tree; the virtualenv and the dashboard
-FROM python:3.14-slim-trixie AS runtime
+FROM python:3.15-slim-trixie AS runtime
 
 RUN groupadd --system --gid 10001 hub \
     && useradd --system --uid 10001 --gid hub --no-create-home --shell /usr/sbin/nologin hub \
